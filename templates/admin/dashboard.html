@@ -139,29 +139,8 @@
         </a>
     </div>
 
-    <!-- Recent Activity & Revenue Chart (Placeholder for now) -->
-    <div class="grid-2">
-        <!-- Recent Activity -->
-        <div class="card">
-            <div class="card-header">
-                <div class="card-title">
-                    <i class="fas fa-history" style="color: var(--p-text-muted);"></i>
-                    فعالیت‌های اخیر
-                </div>
-                <button class="btn btn-sm btn-outline" style="padding: 0.25rem 0.75rem; font-size: 0.75rem;">مشاهده
-                    همه</button>
-            </div>
-            <div class="activity-list" id="activityList">
-                <div style="text-align: center; padding: var(--sp-xl); color: var(--p-text-muted);">
-                    <div class="loading-spinner">
-                        <i class="fas fa-circle-notch fa-spin"
-                            style="font-size: 1.5rem; margin-bottom: var(--sp-sm);"></i>
-                        <div>در حال بارگذاری...</div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
+    <!-- Revenue Chart -->
+    <div class="grid-1">
         <!-- Monthly Revenue -->
         <div class="card">
             <div class="card-header">
@@ -231,56 +210,6 @@
 
 {% block extra_js %}
 <script>
-    // Load Activity Data
-    document.addEventListener('DOMContentLoaded', function () {
-        loadActivity();
-
-        // Refresh stats every 30 seconds
-        setInterval(loadActivity, 30000);
-    });
-
-    async function loadActivity() {
-        try {
-            const data = await apiCall('/api/admin/activity');
-            const list = document.getElementById('activityList');
-
-            if (!data.activities || data.activities.length === 0) {
-                list.innerHTML = `
-                    <div style="text-align: center; padding: var(--sp-xl); color: var(--p-text-muted);">
-                        <i class="fas fa-history" style="font-size: 2rem; margin-bottom: var(--sp-md); opacity: 0.5;"></i>
-                        <div>هیچ فعالیت اخیری ثبت نشده است</div>
-                    </div>
-                `;
-                return;
-            }
-
-            list.innerHTML = data.activities.map(item => `
-                <div style="display: flex; align-items: flex-start; gap: var(--sp-md); padding: var(--sp-md); border-bottom: 1px solid var(--border-color);">
-                    <div style="width: 32px; height: 32px; border-radius: 50%; background: var(--p-bg-hover); display: flex; align-items: center; justify-content: center; flex-shrink: 0; color: var(--p-text-muted);">
-                        <i class="fas ${getActivityIcon(item.type)}"></i>
-                    </div>
-                    <div style="flex: 1;">
-                        <div style="font-weight: 600; font-size: 0.9rem; margin-bottom: 2px;">${item.message}</div>
-                        <div style="font-size: 0.75rem; color: var(--p-text-muted);">${item.time_ago}</div>
-                    </div>
-                </div>
-            `).join('');
-
-        } catch (error) {
-            console.error('Error loading activity:', error);
-        }
-    }
-
-    function getActivityIcon(type) {
-        const icons = {
-            'login': 'fa-sign-in-alt',
-            'create': 'fa-plus',
-            'update': 'fa-edit',
-            'delete': 'fa-trash',
-            'error': 'fa-exclamation-triangle',
-            'success': 'fa-check'
-        };
-        return icons[type] || 'fa-circle';
-    }
+    // No specific JS needed for now
 </script>
 {% endblock %}

@@ -5,6 +5,83 @@
 {% block extra_css %}
 <link rel="stylesheet"
     href="{{ url_for('static', filename='css/buy-service-redesign-v3.css') }}?v={{ range(1, 10000) | random }}">
+<style>
+    /* Card Payment Styles */
+    .card-payment-details {
+        display: none;
+        margin-top: 20px;
+        padding: 20px;
+        background: rgba(255, 255, 255, 0.05);
+        border-radius: 16px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .card-info-box {
+        background: linear-gradient(135deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.05));
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 16px;
+        padding: 1.5rem;
+        margin-bottom: 1.5rem;
+        text-align: center;
+    }
+
+    .card-number {
+        font-family: monospace;
+        font-size: 1.4rem;
+        font-weight: 700;
+        letter-spacing: 2px;
+        color: white;
+        margin: 1rem 0;
+        direction: ltr;
+    }
+
+    .card-owner {
+        color: var(--text-secondary);
+        font-size: 0.9rem;
+    }
+
+    .copy-btn {
+        background: rgba(255, 255, 255, 0.1);
+        border: none;
+        padding: 0.5rem 1rem;
+        border-radius: 8px;
+        color: white;
+        font-size: 0.8rem;
+        cursor: pointer;
+        margin-top: 0.5rem;
+        transition: all 0.2s;
+    }
+
+    .copy-btn:hover {
+        background: rgba(255, 255, 255, 0.2);
+    }
+
+    .file-upload-wrapper {
+        position: relative;
+        margin-top: 1rem;
+        text-align: center;
+    }
+
+    .file-upload-label {
+        display: block;
+        padding: 1.5rem;
+        border: 2px dashed rgba(255, 255, 255, 0.2);
+        border-radius: 16px;
+        cursor: pointer;
+        transition: all 0.3s;
+    }
+
+    .file-upload-label:hover {
+        border-color: var(--primary);
+        background: rgba(255, 255, 255, 0.05);
+    }
+
+    .file-upload-text {
+        color: var(--text-secondary);
+        font-size: 0.9rem;
+        margin-top: 0.5rem;
+    }
+</style>
 {% endblock %}
 
 {% block content %}
@@ -120,28 +197,42 @@
 
         <div style="padding: 0 20px; margin-top: 30px;">
             <h3 style="margin-bottom: 16px; font-size: 1.1rem;">روش پرداخت</h3>
+
+            <!-- Hidden input to force card payment -->
+            <input type="hidden" name="payment_method" value="card">
+
             <div class="payment-methods">
-                <div class="payment-item selected" onclick="selectPaymentMethod('balance', this)">
-                    <input type="radio" name="payment_method" value="balance" checked style="display:none;">
-                    <div class="payment-icon"><i class="fas fa-wallet"></i></div>
+                <div class="payment-item selected" style="cursor: default;">
+                    <div class="payment-icon"><i class="fas fa-credit-card"></i></div>
                     <div style="flex: 1; margin-right: 16px;">
-                        <div style="font-weight: 700;">کیف پول</div>
+                        <div style="font-weight: 700;">کارت به کارت</div>
                         <div style="font-size: 0.85rem; color: var(--text-secondary); margin-top: 4px;">
-                            موجودی: {{ "{:,}".format(user.balance or 0) }} تومان
+                            واریز به کارت و ارسال رسید
                         </div>
                     </div>
                     <div class="check-circle"><i class="fas fa-check-circle" style="color: var(--primary);"></i></div>
                 </div>
+            </div>
 
-                <div class="payment-item" onclick="selectPaymentMethod('gateway', this)">
-                    <input type="radio" name="payment_method" value="gateway" style="display:none;">
-                    <div class="payment-icon"><i class="fas fa-credit-card"></i></div>
-                    <div style="flex: 1; margin-right: 16px;">
-                        <div style="font-weight: 700;">درگاه بانکی</div>
-                        <div style="font-size: 0.85rem; color: var(--text-secondary); margin-top: 4px;">
-                            پرداخت امن با کلیه کارت‌های عضو شتاب
-                        </div>
-                    </div>
+            <!-- Card Payment Details -->
+            <div id="cardPaymentDetails" class="card-payment-details">
+                <div class="card-info-box">
+                    <div style="color: var(--text-secondary); font-size: 0.9rem;">شماره کارت جهت واریز</div>
+                    <div class="card-number" id="cardNumber">Loading...</div>
+                    <div class="card-owner" id="cardOwner">Loading...</div>
+                    <button type="button" class="copy-btn" onclick="copyCardNumber()">
+                        <i class="fas fa-copy"></i> کپی شماره کارت
+                    </button>
+                </div>
+
+                <div class="file-upload-wrapper">
+                    <label for="receiptFile" class="file-upload-label">
+                        <i class="fas fa-cloud-upload-alt"
+                            style="font-size: 2rem; color: var(--text-secondary); margin-bottom: 0.5rem;"></i>
+                        <div class="file-upload-text" id="fileName">برای انتخاب تصویر رسید کلیک کنید</div>
+                    </label>
+                    <input type="file" id="receiptFile" accept="image/*" style="display: none;"
+                        onchange="updateFileName(this)">
                 </div>
             </div>
         </div>
@@ -158,7 +249,7 @@
         <i class="fas fa-arrow-right"></i> بازگشت
     </button>
     <button type="button" class="btn-action btn-submit" id="btnSubmit" onclick="submitForm()" style="display: none;">
-        <span>پرداخت نهایی</span> <i class="fas fa-chevron-left"></i>
+        <span id="submitBtnText">پرداخت نهایی</span> <i class="fas fa-chevron-left"></i>
     </button>
 </div>
 
@@ -239,16 +330,15 @@
         const btnBack = document.getElementById('btnBack');
         const btnSubmit = document.getElementById('btnSubmit');
 
-        // Back button logic - Bottom button is now hidden by default or used only in specific cases
-        // We rely on the header back button for main navigation
-        // But we can keep the bottom one for consistency if desired, or hide it.
-        // User asked for "A back button in the best place". Header is best.
-        // I will hide the bottom back button to avoid clutter, as requested "best place" implies one optimal placement.
         btnBack.style.display = 'none';
 
         // Submit button logic
         if (stepId === 'step3') {
             btnSubmit.style.display = 'flex';
+            // Auto-show card payment details when reaching step 3
+            const cardDetails = document.getElementById('cardPaymentDetails');
+            cardDetails.style.display = 'block';
+            loadCardInfo();
         } else {
             btnSubmit.style.display = 'none';
         }
@@ -331,10 +421,6 @@
     function selectPanel(panel) {
         selectedPanel = panel;
         pricePerGB = panel.price_per_gb || 0;
-
-        if (!hasSinglePanel) {
-            // Visual feedback could be added here if we weren't immediately navigating
-        }
 
         if (renewServiceId && renewPanelId && panel.id !== renewPanelId) {
             renewServiceId = null;
@@ -566,6 +652,40 @@
             check.innerHTML = '<i class="fas fa-check-circle" style="color: var(--primary);"></i>';
             element.appendChild(check);
         }
+
+        // Always show Card Details
+        const cardDetails = document.getElementById('cardPaymentDetails');
+        const submitBtnText = document.getElementById('submitBtnText');
+
+        cardDetails.style.display = 'block';
+        submitBtnText.textContent = 'ارسال رسید و ثبت';
+        loadCardInfo();
+    }
+
+    async function loadCardInfo() {
+        try {
+            const response = await fetch('api/payment/card-info');
+            const data = await response.json();
+
+            if (data.success) {
+                document.getElementById('cardNumber').textContent = data.card_number || 'تعیین نشده';
+                document.getElementById('cardOwner').textContent = data.card_owner || 'تعیین نشده';
+            }
+        } catch (error) {
+            console.error('Error:', error);
+        }
+    }
+
+    function copyCardNumber() {
+        const cardNumber = document.getElementById('cardNumber').textContent;
+        navigator.clipboard.writeText(cardNumber).then(() => {
+            showToast('شماره کارت کپی شد', 'success');
+        });
+    }
+
+    function updateFileName(input) {
+        const fileName = input.files[0]?.name || 'برای انتخاب تصویر رسید کلیک کنید';
+        document.getElementById('fileName').textContent = fileName;
     }
 
     async function applyDiscountCode() {
@@ -612,8 +732,20 @@
         if (purchaseType === 'plan' && !selectedProduct) return showToast('محصول انتخاب نشده است', 'error');
         if (purchaseType === 'gigabyte' && !selectedVolume) return showToast('حجم انتخاب نشده است', 'error');
 
-        const paymentMethod = document.querySelector('input[name="payment_method"]:checked').value;
-        showToast('در حال انتقال به درگاه...', 'info');
+        // Always 'card'
+        const paymentMethod = 'card';
+
+        // Validate Card Payment
+        const fileInput = document.getElementById('receiptFile');
+        if (fileInput.files.length === 0) {
+            return showToast('لطفاً تصویر رسید را انتخاب کنید', 'error');
+        }
+
+
+        const btn = document.getElementById('btnSubmit');
+        const originalHtml = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> در حال پردازش...';
 
         try {
             const body = {
@@ -633,7 +765,29 @@
             const data = await res.json();
 
             if (data.success) {
-                if (data.payment_link) {
+                if (paymentMethod === 'card' && data.invoice_id) {
+                    // Upload Receipt
+                    const fileInput = document.getElementById('receiptFile');
+                    const formData = new FormData();
+                    formData.append('invoice_id', data.invoice_id);
+                    formData.append('receipt', fileInput.files[0]);
+
+                    const uploadRes = await fetch('api/payment/upload-receipt', {
+                        method: 'POST',
+                        body: formData
+                    });
+                    const uploadData = await uploadRes.json();
+
+                    if (uploadData.success) {
+                        showToast('درخواست شما با موفقیت ثبت شد', 'success');
+                        setTimeout(() => window.location.href = '/services', 2000);
+                    } else {
+                        showToast(uploadData.message || 'خطا در آپلود رسید', 'error');
+                        btn.disabled = false;
+                        btn.innerHTML = originalHtml;
+                    }
+
+                } else if (data.payment_link) {
                     window.location.href = data.payment_link;
                 } else {
                     showToast('سرویس با موفقیت ایجاد شد', 'success');
@@ -641,9 +795,14 @@
                 }
             } else {
                 showToast(data.message || 'خطا در ایجاد سرویس', 'error');
+                btn.disabled = false;
+                btn.innerHTML = originalHtml;
             }
         } catch (e) {
+            console.error(e);
             showToast('خطا در ارتباط با سرور', 'error');
+            btn.disabled = false;
+            btn.innerHTML = originalHtml;
         }
     }
 </script>

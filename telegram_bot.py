@@ -84,6 +84,8 @@ class VPNBot:
             from config import WEBAPP_CONFIG
             self.bot_config['webapp_url'] = WEBAPP_CONFIG['url']
             logger.info(f"✅ Set webapp_url from config: {self.bot_config['webapp_url']}")
+            
+        self.bot_username = self.bot_config.get('bot_username', '')
         
         # Payment config removed
         self.starsefar_config = {}
@@ -798,6 +800,23 @@ class VPNBot:
                 panel_id = int(parts[3])
                 gb_amount = int(parts[4])
                 await self.handle_continue_without_discount(update, context, panel_id, gb_amount)
+            elif data == "financial_management":
+                await self.show_financial_management(update, context)
+            elif data == "card_settings":
+                await self.show_card_settings(update, context)
+            elif data == "set_card_number":
+                await self.prompt_card_number(update, context)
+            elif data == "set_card_owner":
+                await self.prompt_card_owner(update, context)
+            elif data.startswith("pay_card_"):
+                invoice_id = int(data.split("_")[2])
+                await self.show_card_payment(update, context, invoice_id)
+            elif data.startswith("approve_receipt_"):
+                invoice_id = int(data.split("_")[2])
+                await self.handle_approve_receipt(update, context, invoice_id)
+            elif data.startswith("reject_receipt_"):
+                invoice_id = int(data.split("_")[2])
+                await self.handle_reject_receipt(update, context, invoice_id)
             elif data.startswith("apply_discount_"):
                 parts = data.split("_")
                 panel_id = int(parts[2])
@@ -1180,12 +1199,19 @@ class VPNBot:
                 volume_gb = int(parts[4])
                 price = int(parts[5])
                 await self.handle_balance_volume_payment(update, context, panel_id, volume_gb, price)
-            elif data.startswith("pay_gateway_volume_"):
+            elif data.startswith("pay_card_volume_"):
                 parts = data.split("_")
                 panel_id = int(parts[3])
                 volume_gb = int(parts[4])
                 price = int(parts[5])
-                await self.handle_gateway_volume_payment(update, context, panel_id, volume_gb, price)
+                # Create invoice and show card payment
+                invoice_id = self.db.create_invoice(
+                    user_id=update.effective_user.id,
+                    amount=price,
+                    description=f"خرید {volume_gb} گیگابایت حجم اضافه",
+                    payment_method='card'
+                )
+                await self.show_card_payment(update, context, invoice_id)
             elif data.startswith("add_volume_select_"):
                 parts = data.split("_")
                 service_id = int(parts[3])
@@ -1199,13 +1225,20 @@ class VPNBot:
                 volume_gb = int(parts[6])
                 price = int(parts[7])
                 await self.handle_balance_add_volume_payment(update, context, service_id, panel_id, volume_gb, price)
-            elif data.startswith("pay_gateway_add_volume_"):
+            elif data.startswith("pay_card_add_volume_"):
                 parts = data.split("_")
                 service_id = int(parts[4])
                 panel_id = int(parts[5])
                 volume_gb = int(parts[6])
                 price = int(parts[7])
-                await self.handle_gateway_add_volume_payment(update, context, service_id, panel_id, volume_gb, price)
+                # Create invoice and show card payment
+                invoice_id = self.db.create_invoice(
+                    user_id=update.effective_user.id,
+                    amount=price,
+                    description=f"خرید {volume_gb} گیگابایت حجم اضافه برای سرویس {service_id}",
+                    payment_method='card'
+                )
+                await self.show_card_payment(update, context, invoice_id)
             elif data.startswith("test_panel_"):
                 parts = data.split("_")
                 if len(parts) >= 3 and parts[2].isdigit():
@@ -1236,11 +1269,11 @@ class VPNBot:
                     await self.handle_balance_payment(update, context, invoice_id)
                 else:
                     await query.edit_message_text("❌ خطا در پردازش درخواست.")
-            elif data.startswith("pay_gateway_"):
+            elif data.startswith("pay_card_"):
                 parts = data.split("_")
                 if len(parts) >= 3 and parts[2].isdigit():
                     invoice_id = int(parts[2])
-                    await self.handle_gateway_payment(update, context, invoice_id)
+                    await self.show_card_payment(update, context, invoice_id)
                 else:
                     await query.edit_message_text("❌ خطا در پردازش درخواست.")
             elif data == "account_balance":
@@ -1376,6 +1409,44 @@ class VPNBot:
             elif data == "page_info":
                 # Handle page info button - just show a simple alert
                 await query.answer("ℹ️ این دکمه فقط نمایشگر شماره صفحه است", show_alert=False)
+            elif data.startswith("pay_gateway_volume_"):
+                # Redirect to card-to-card payment for volume purchase
+                parts = data.split("_")
+                # pay_gateway_volume_{panel_id}_{volume_gb}_{price}
+                if len(parts) >= 6 and parts[3].isdigit() and parts[4].isdigit() and parts[5].isdigit():
+                    panel_id = int(parts[3])
+                    volume_gb = int(parts[4])
+                    price = int(parts[5])
+                    await self.handle_gateway_volume_payment(update, context, panel_id, volume_gb, price)
+                else:
+                    await query.edit_message_text("❌ خطا در پردازش درخواست.")
+            elif data.startswith("pay_gateway_add_volume_"):
+                # Redirect to card-to-card payment for add volume
+                parts = data.split("_")
+                # pay_gateway_add_volume_{service_id}_{panel_id}_{volume_gb}_{price}
+                if len(parts) >= 8:
+                    service_id = int(parts[4])
+                    panel_id = int(parts[5])
+                    volume_gb = int(parts[6])
+                    price = int(parts[7])
+                    await self.handle_gateway_add_volume_payment(update, context, service_id, panel_id, volume_gb, price)
+                else:
+                    await query.edit_message_text("❌ خطا در پردازش درخواست.")
+            elif data.startswith("pay_gateway_"):
+                # Generic gateway callback - redirect to card-to-card
+                parts = data.split("_")
+                # pay_gateway_{invoice_id} or pay_gateway_{something}
+                if len(parts) >= 3 and parts[2].isdigit():
+                    invoice_id = int(parts[2])
+                    await self.show_card_payment(update, context, invoice_id)
+                else:
+                    await query.edit_message_text("❌ درگاه پرداخت آنلاین غیرفعال است. لطفاً از کارت به کارت استفاده کنید.")
+            elif data.startswith("approve_receipt_"):
+                invoice_id = int(data.split("_")[2])
+                await self.handle_approve_receipt(update, context, invoice_id)
+            elif data.startswith("reject_receipt_"):
+                invoice_id = int(data.split("_")[2])
+                await self.handle_reject_receipt(update, context, invoice_id)
             else:
                 # Handle unknown callback data
                 logger.warning(f"Unknown callback data: {data}")
@@ -1558,7 +1629,8 @@ class VPNBot:
             await self.show_help(update, context)
             return
         elif text == "⚙️ پنل مدیریت":
-            await self.handle_admin_panel(update, context)
+            if self.db.is_admin(user_id):
+                await self.handle_admin_panel(update, context)
             return
         
         # Check if admin is sending broadcast message
@@ -1579,6 +1651,11 @@ class VPNBot:
         # Check if admin is entering user ID for info
         if context.user_data.get('awaiting_user_id_for_info', False):
             await self.handle_user_info_display(update, context)
+            return
+
+        # Check if admin is entering card number or owner
+        if context.user_data.get('awaiting_card_number', False) or context.user_data.get('awaiting_card_owner', False):
+            await self.handle_card_settings_input(update, context, text)
             return
         
         # Check if admin is entering gift amount
@@ -2164,20 +2241,19 @@ class VPNBot:
         query = update.callback_query
         await query.answer()
         
+        user_id = update.effective_user.id
+        if not self.db.is_admin(user_id):
+            await query.edit_message_text("❌ دسترسی غیرمجاز.")
+            return
+        
         admin_text = """
 ⚙️ **پنل مدیریت**
 
 به پنل مدیریت خوش آمدید. گزینه مورد نظر را انتخاب کنید:
         """
         
-        keyboard = [
-            [InlineKeyboardButton("🔧 مدیریت پنل‌ها", callback_data="manage_panels")],
-            [InlineKeyboardButton("📦 مدیریت محصولات", callback_data="manage_products")],
-            [InlineKeyboardButton("📊 آمار کلی", callback_data="admin_stats")],
-            [InlineKeyboardButton("👥 مدیریت کاربران", callback_data="manage_users")],
-            [InlineKeyboardButton("🔙 بازگشت", callback_data="main_menu")]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
+        # Use the centralized button layout
+        reply_markup = ButtonLayout.create_admin_panel(bot_name=self.bot_username)
         
         await query.edit_message_text(
             admin_text,
@@ -3371,7 +3447,7 @@ class VPNBot:
                     )
                 
                 # Get subscription link
-                subscription_link = client.get('subscription_link', client.get('config_link', ''))
+                subscription_link = client.get('subscription_link') or client.get('subscription_url', client.get('config_link', ''))
                 
                 # Format success message
                 success_text = f"""
@@ -3808,7 +3884,22 @@ class VPNBot:
                     logger.info(f"✅ Client saved to database with ID: {client_id}")
                     
                     # Get subscription link
-                    subscription_link = client_data.get('subscription_link', client_data.get('config_link', ''))
+                    subscription_link = client_data.get('subscription_link') or client_data.get('config_link') or client_data.get('subscription_url')
+                    
+                    # If still empty, try to construct it from panel subscription_url
+                    if not subscription_link and client_data.get('sub_id'):
+                        sub_url = panel.get('subscription_url', '')
+                        if sub_url:
+                            # Clean up sub_url
+                            if sub_url.endswith('/sub') or sub_url.endswith('/sub/'):
+                                base_url = sub_url.rstrip('/')
+                                subscription_link = f"{base_url}/{client_data['sub_id']}"
+                            elif '/sub' in sub_url:
+                                subscription_link = f"{sub_url}/{client_data['sub_id']}"
+                            else:
+                                subscription_link = f"{sub_url}/sub/{client_data['sub_id']}"
+                            
+                            logger.info(f"✅ Constructed subscription link: {subscription_link}")
                     
                     # Format success message
                     success_text = f"""
@@ -5083,47 +5174,120 @@ class VPNBot:
             await query.edit_message_text("❌ خطا در نمایش گزینه‌های افزایش موجودی.")
     
     async def handle_add_balance_amount(self, update: Update, context: ContextTypes.DEFAULT_TYPE, amount: int):
-        """Handle add balance amount selection"""
+        """Handle add balance amount selection - Card to Card"""
         query = update.callback_query
         await query.answer()
         
         try:
             user_id = update.effective_user.id
             
-            # Create payment link for balance addition
+            # Create invoice for balance addition
             description = f"افزایش موجودی به مبلغ {amount:,} تومان"
-            payment_result = self.starsefar_api.create_gift_link_amount(
-                target_account=f"@{update.effective_user.username or f'user_{user_id}'}",
+            
+            invoice_id = self.db.create_invoice(
+                user_id=user_id,
                 amount=amount,
-                callback_url=f"http://154.91.170.4:4000/callback/balance_{user_id}_{amount}"
+                description=description,
+                payment_method='card',
+                purchase_type='balance'
             )
             
-            if payment_result['success']:
-                text = f"""
-💳 **افزایش موجودی**
-
-💰 **مبلغ:** {amount:,} تومان
-
-برای تکمیل پرداخت روی دکمه زیر کلیک کنید:
-                """
-                
-                keyboard = [
-                    [InlineKeyboardButton("💳 پرداخت آنلاین", url=payment_result['data']['paymentUrl'])],
-                    [InlineKeyboardButton("🔙 بازگشت", callback_data="add_balance")]
-                ]
-                reply_markup = InlineKeyboardMarkup(keyboard)
-                
-                await query.edit_message_text(
-                    text,
-                    reply_markup=reply_markup,
-                    parse_mode='Markdown'
-                )
+            if invoice_id:
+                # Show card payment details
+                await self.show_card_payment(update, context, invoice_id)
             else:
-                await query.edit_message_text(f"❌ {payment_result['message']}")
+                await query.edit_message_text("❌ خطا در ایجاد فاکتور. لطفاً با پشتیبانی تماس بگیرید.")
                 
         except Exception as e:
             logger.error(f"Error handling add balance amount: {e}")
-            await query.edit_message_text("❌ خطا در ایجاد لینک پرداخت.")
+            await query.edit_message_text("❌ خطا در پردازش درخواست.")
+    
+    async def handle_gateway_volume_payment(self, update: Update, context: ContextTypes.DEFAULT_TYPE, 
+                                            panel_id: int, volume_gb: int, price: int):
+        """Handle gateway payment for volume purchase - redirect to card-to-card"""
+        query = update.callback_query
+        await query.answer()
+        
+        try:
+            user_id = update.effective_user.id
+            
+            # Get panel info
+            panel = self.db.get_panel(panel_id)
+            panel_name = panel['name'] if panel else 'نامشخص'
+            
+            # Create invoice for service purchase
+            description = f"خرید {volume_gb} گیگابایت از پنل {panel_name}"
+            
+            invoice_id = self.db.create_invoice(
+                user_id=user_id,
+                amount=price,
+                description=description,
+                payment_method='card',
+                purchase_type='service',
+                panel_id=panel_id
+            )
+            
+            if invoice_id:
+                # Store purchase info in context for later use
+                context.user_data['pending_purchase'] = {
+                    'panel_id': panel_id,
+                    'volume_gb': volume_gb,
+                    'price': price,
+                    'invoice_id': invoice_id
+                }
+                
+                # Show card payment details
+                await self.show_card_payment(update, context, invoice_id)
+            else:
+                await query.edit_message_text("❌ خطا در ایجاد فاکتور. لطفاً با پشتیبانی تماس بگیرید.")
+                
+        except Exception as e:
+            logger.error(f"Error handling gateway volume payment: {e}")
+            await query.edit_message_text("❌ خطا در پردازش درخواست.")
+    
+    async def handle_gateway_add_volume_payment(self, update: Update, context: ContextTypes.DEFAULT_TYPE,
+                                                 service_id: int, panel_id: int, volume_gb: int, price: int):
+        """Handle gateway payment for add volume - redirect to card-to-card"""
+        query = update.callback_query
+        await query.answer()
+        
+        try:
+            user_id = update.effective_user.id
+            
+            # Get panel info
+            panel = self.db.get_panel(panel_id)
+            panel_name = panel['name'] if panel else 'نامشخص'
+            
+            # Create invoice for volume addition
+            description = f"افزایش {volume_gb} گیگابایت به سرویس"
+            
+            invoice_id = self.db.create_invoice(
+                user_id=user_id,
+                amount=price,
+                description=description,
+                payment_method='card',
+                purchase_type='renew',
+                panel_id=panel_id
+            )
+            
+            if invoice_id:
+                # Store purchase info in context for later use
+                context.user_data['pending_add_volume'] = {
+                    'service_id': service_id,
+                    'panel_id': panel_id,
+                    'volume_gb': volume_gb,
+                    'price': price,
+                    'invoice_id': invoice_id
+                }
+                
+                # Show card payment details
+                await self.show_card_payment(update, context, invoice_id)
+            else:
+                await query.edit_message_text("❌ خطا در ایجاد فاکتور. لطفاً با پشتیبانی تماس بگیرید.")
+                
+        except Exception as e:
+            logger.error(f"Error handling gateway add volume payment: {e}")
+            await query.edit_message_text("❌ خطا در پردازش درخواست.")
     
     async def handle_protocol_selection_for_panel(self, update: Update, context: ContextTypes.DEFAULT_TYPE, protocol: str):
         """Handle protocol selection for Marzban panel creation"""
@@ -5758,61 +5922,29 @@ class VPNBot:
         if query:
             await query.answer()
         
-        try:
-            message = "👑 پنل مدیریت\n\nلطفاً یکی از گزینه‌های زیر را انتخاب کنید:"
-            
-            keyboard = []
-            
-            # Add web admin panel button at the top
-            import os
-            base_url = self.bot_config.get('webapp_url', 'http://localhost:443')
-            base_url = base_url.rstrip('/')
-            bot_name = self.bot_config.get('bot_name', '')
-            
-            # Construct admin webapp URL with bot_name prefix
-            if bot_name:
-                admin_webapp_url = f"{base_url}/{bot_name}/admin"
+        user_id = update.effective_user.id
+        if not self.db.is_admin(user_id):
+            error_text = "❌ دسترسی غیرمجاز."
+            if query:
+                await query.edit_message_text(error_text)
             else:
-                admin_webapp_url = f"{base_url}/admin"
+                await update.message.reply_text(error_text)
+            return
+
+        try:
+            message = """
+👑 **پنل مدیریت**
+
+لطفاً یکی از گزینه‌های زیر را انتخاب کنید:
+            """
             
-            # Log for debugging
-            logger.info(f"[Admin Panel] Bot: {bot_name}, Base URL: {base_url}, Admin URL: {admin_webapp_url}")
-            
-            keyboard.append([
-                InlineKeyboardButton(
-                    "👑 ورود به پنل مدیریت وب",
-                    web_app=WebAppInfo(url=admin_webapp_url)
-                )
-                ])
-            
-            # Core admin functions
-            keyboard.append([
-                InlineKeyboardButton("📊 آمار و گزارشات", callback_data="admin_stats")
-            ])
-            keyboard.append([
-                InlineKeyboardButton("🔧 مدیریت پنل‌ها", callback_data="manage_panels"), 
-                InlineKeyboardButton("📦 مدیریت محصولات", callback_data="manage_products")
-            ])
-            keyboard.append([
-                InlineKeyboardButton("👥 خدمات کاربران", callback_data="user_services_menu"), 
-                InlineKeyboardButton("🏷️ کدهای تخفیف", callback_data="admin_discount_codes")
-            ])
-            keyboard.append([
-                InlineKeyboardButton("📢 همگانی", callback_data="broadcast_menu")
-            ])
-            keyboard.append([
-                InlineKeyboardButton("📋 لاگ‌ها", callback_data="system_logs")
-            ])
-            keyboard.append([
-                InlineKeyboardButton("🔙 بازگشت", callback_data="start")
-            ])
-            
-            reply_markup = InlineKeyboardMarkup(keyboard)
+            # Use the centralized button layout
+            reply_markup = ButtonLayout.create_admin_panel(bot_name=self.bot_username)
             
             if query:
-                await query.edit_message_text(message, reply_markup=reply_markup)
+                await query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
             else:
-                await update.message.reply_text(message, reply_markup=reply_markup)
+                await update.message.reply_text(message, reply_markup=reply_markup, parse_mode='Markdown')
             
         except Exception as e:
             logger.error(f"Error handling admin panel: {e}")
@@ -8870,19 +9002,22 @@ class VPNBot:
     async def handle_select_panel(self, update: Update, context: ContextTypes.DEFAULT_TYPE, panel_id: int):
         """Handle panel selection for service purchase"""
         query = update.callback_query
-        await query.answer()
+        if query:
+            await query.answer()
         
         try:
             # Get panel details
             panel = self.db.get_panel(panel_id)
             if not panel:
-                try:
-                    await query.edit_message_text("❌ پنل یافت نشد.")
-                except BadRequest as e:
-                    if "not modified" in str(e).lower():
-                        logger.info(f"Message not modified when showing panel not found")
-                    else:
-                        raise
+                error_text = "❌ پنل یافت نشد."
+                if query:
+                    try:
+                        await query.edit_message_text(error_text)
+                    except BadRequest as e:
+                        if "not modified" not in str(e).lower():
+                            raise
+                else:
+                    await update.message.reply_text(error_text)
                 return
             
             # Store panel ID in user data
@@ -8912,13 +9047,14 @@ class VPNBot:
                 ]
                 reply_markup = InlineKeyboardMarkup(keyboard)
                 
-                try:
-                    await query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
-                except BadRequest as e:
-                    if "not modified" in str(e).lower():
-                        logger.info(f"Message not modified when showing purchase type selection for panel {panel_id}")
-                    else:
-                        raise
+                if query:
+                    try:
+                        await query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+                    except BadRequest as e:
+                        if "not modified" not in str(e).lower():
+                            raise
+                else:
+                    await update.message.reply_text(message, reply_markup=reply_markup, parse_mode='Markdown')
                 return
             
             # If sale type is 'gigabyte', show volume selection
@@ -8936,13 +9072,14 @@ class VPNBot:
                 
                 reply_markup = ButtonLayout.create_volume_suggestions(panel_id, price_per_gb)
                 
-                try:
-                    await query.edit_message_text(message, reply_markup=reply_markup)
-                except BadRequest as e:
-                    if "not modified" in str(e).lower():
-                        logger.info(f"Message not modified when showing volume selection for panel {panel_id}")
-                    else:
-                        raise
+                if query:
+                    try:
+                        await query.edit_message_text(message, reply_markup=reply_markup)
+                    except BadRequest as e:
+                        if "not modified" not in str(e).lower():
+                            raise
+                else:
+                    await update.message.reply_text(message, reply_markup=reply_markup)
                 return
             
             # If sale type is 'plan', show products
@@ -8964,23 +9101,25 @@ class VPNBot:
             
             reply_markup = ButtonLayout.create_volume_suggestions(panel_id, price_per_gb)
             
-            try:
-                await query.edit_message_text(message, reply_markup=reply_markup)
-            except BadRequest as e:
-                if "not modified" in str(e).lower():
-                    logger.info(f"Message not modified when showing default volume selection for panel {panel_id}")
-                else:
-                    raise
+            if query:
+                try:
+                    await query.edit_message_text(message, reply_markup=reply_markup)
+                except BadRequest as e:
+                    if "not modified" not in str(e).lower():
+                        raise
+            else:
+                await update.message.reply_text(message, reply_markup=reply_markup)
             
         except Exception as e:
             logger.error(f"Error handling select panel: {e}")
-            try:
-                await query.edit_message_text("❌ خطا در انتخاب پنل.")
-            except BadRequest as e2:
-                if "not modified" in str(e2).lower():
-                    logger.info(f"Message not modified when showing error in select panel")
-                else:
-                    raise
+            error_text = "❌ خطا در انتخاب پنل."
+            if query:
+                try:
+                    await query.edit_message_text(error_text)
+                except BadRequest:
+                    pass
+            else:
+                await update.message.reply_text(error_text)
     
     async def handle_buy_gigabyte(self, update: Update, context: ContextTypes.DEFAULT_TYPE, panel_id: int):
         """Handle gigabyte purchase selection"""
@@ -9022,18 +9161,20 @@ class VPNBot:
     async def handle_show_products_for_purchase(self, update: Update, context: ContextTypes.DEFAULT_TYPE, panel_id: int):
         """Show products for purchase - categories or direct products"""
         query = update.callback_query
-        await query.answer()
+        if query:
+            await query.answer()
         
         try:
             panel = self.db.get_panel(panel_id)
             if not panel:
-                try:
-                    await query.edit_message_text("❌ پنل یافت نشد.")
-                except BadRequest as e:
-                    if "not modified" in str(e).lower():
-                        logger.info(f"Message not modified when showing panel not found error")
-                    else:
-                        raise
+                error_text = "❌ پنل یافت نشد."
+                if query:
+                    try:
+                        await query.edit_message_text(error_text)
+                    except BadRequest:
+                        pass
+                else:
+                    await update.message.reply_text(error_text)
                 return
             
             # Check if panel has products without category
@@ -9051,18 +9192,17 @@ class VPNBot:
                 active_panels = self.db.get_panels(active_only=True)
                 back_callback = "user_panel" if len(active_panels) == 1 else "buy_service"
                 
-                try:
-                    await query.edit_message_text(
-                        "❌ هیچ محصولی برای این پنل تعریف نشده است.\n\nلطفاً با ادمین تماس بگیرید.",
-                        reply_markup=InlineKeyboardMarkup([
-                            [InlineKeyboardButton("🔙 بازگشت", callback_data=back_callback)]
-                        ])
-                    )
-                except BadRequest as e:
-                    if "not modified" in str(e).lower():
-                        logger.info(f"Message not modified when showing no products error")
-                    else:
-                        raise
+                error_msg = "❌ هیچ محصولی برای این پنل تعریف نشده است.\n\nلطفاً با ادمین تماس بگیرید."
+                reply_markup = InlineKeyboardMarkup([
+                    [InlineKeyboardButton("🔙 بازگشت", callback_data=back_callback)]
+                ])
+                if query:
+                    try:
+                        await query.edit_message_text(error_msg, reply_markup=reply_markup)
+                    except BadRequest:
+                        pass
+                else:
+                    await update.message.reply_text(error_msg, reply_markup=reply_markup)
                 return
             
             # Show categories for selection
@@ -9088,41 +9228,42 @@ class VPNBot:
             keyboard.append([InlineKeyboardButton("🔙 بازگشت", callback_data=back_callback)])
             reply_markup = InlineKeyboardMarkup(keyboard)
             
-            try:
-                await query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
-            except BadRequest as e:
-                # If message is not modified (already the same), just log it
-                if "not modified" in str(e).lower():
-                    logger.info(f"Message not modified when showing categories for panel {panel_id}")
-                else:
-                    # Re-raise other BadRequest errors
-                    raise
+            if query:
+                try:
+                    await query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+                except BadRequest:
+                    pass
+            else:
+                await update.message.reply_text(message, reply_markup=reply_markup, parse_mode='Markdown')
             
         except Exception as e:
             logger.error(f"Error showing products for purchase: {e}")
-            try:
-                await query.edit_message_text("❌ خطا در نمایش محصولات.")
-            except BadRequest as e2:
-                if "not modified" in str(e2).lower():
-                    logger.info(f"Message not modified when showing error message")
-                else:
-                    raise
+            error_text = "❌ خطا در نمایش محصولات."
+            if query:
+                try:
+                    await query.edit_message_text(error_text)
+                except BadRequest:
+                    pass
+            else:
+                await update.message.reply_text(error_text)
     
     async def handle_show_products_for_purchase_no_category(self, update: Update, context: ContextTypes.DEFAULT_TYPE, panel_id: int):
         """Show products without category for purchase"""
         query = update.callback_query
-        await query.answer()
+        if query:
+            await query.answer()
         
         try:
             panel = self.db.get_panel(panel_id)
             if not panel:
-                try:
-                    await query.edit_message_text("❌ پنل یافت نشد.")
-                except BadRequest as e:
-                    if "not modified" in str(e).lower():
-                        logger.info(f"Message not modified when showing panel not found in no category")
-                    else:
-                        raise
+                error_text = "❌ پنل یافت نشد."
+                if query:
+                    try:
+                        await query.edit_message_text(error_text)
+                    except BadRequest:
+                        pass
+                else:
+                    await update.message.reply_text(error_text)
                 return
             
             products = self.db.get_products(panel_id, category_id=False, active_only=True)
@@ -9132,18 +9273,17 @@ class VPNBot:
                 active_panels = self.db.get_panels(active_only=True)
                 back_callback = "user_panel" if len(active_panels) == 1 else "buy_service"
                 
-                try:
-                    await query.edit_message_text(
-                        "❌ هیچ محصول فعالی وجود ندارد.",
-                        reply_markup=InlineKeyboardMarkup([
-                            [InlineKeyboardButton("🔙 بازگشت", callback_data=back_callback)]
-                        ])
-                    )
-                except BadRequest as e:
-                    if "not modified" in str(e).lower():
-                        logger.info(f"Message not modified when showing no products in no category")
-                    else:
-                        raise
+                error_msg = "❌ هیچ محصول فعالی وجود ندارد."
+                reply_markup = InlineKeyboardMarkup([
+                    [InlineKeyboardButton("🔙 بازگشت", callback_data=back_callback)]
+                ])
+                if query:
+                    try:
+                        await query.edit_message_text(error_msg, reply_markup=reply_markup)
+                    except BadRequest:
+                        pass
+                else:
+                    await update.message.reply_text(error_msg, reply_markup=reply_markup)
                 return
             
             message = f"📦 **محصولات - پنل {panel['name']}:**\n\n"
@@ -9172,23 +9312,24 @@ class VPNBot:
             keyboard.append([InlineKeyboardButton("🔙 بازگشت", callback_data=back_callback)])
             reply_markup = InlineKeyboardMarkup(keyboard)
             
-            try:
-                await query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
-            except BadRequest as e:
-                if "not modified" in str(e).lower():
-                    logger.info(f"Message not modified when showing products without category for panel {panel_id}")
-                else:
-                    raise
+            if query:
+                try:
+                    await query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+                except BadRequest:
+                    pass
+            else:
+                await update.message.reply_text(message, reply_markup=reply_markup, parse_mode='Markdown')
             
         except Exception as e:
             logger.error(f"Error showing products without category: {e}")
-            try:
-                await query.edit_message_text("❌ خطا در نمایش محصولات.")
-            except BadRequest as e2:
-                if "not modified" in str(e2).lower():
-                    logger.info(f"Message not modified when showing error in no category products")
-                else:
-                    raise
+            error_text = "❌ خطا در نمایش محصولات."
+            if query:
+                try:
+                    await query.edit_message_text(error_text)
+                except BadRequest:
+                    pass
+            else:
+                await update.message.reply_text(error_text)
     
     async def handle_buy_category_products(self, update: Update, context: ContextTypes.DEFAULT_TYPE, category_id: int):
         """Show products in a category for purchase"""
@@ -12827,52 +12968,6 @@ class VPNBot:
         # Process the balance addition
         await self.handle_add_balance_amount(update, context, amount)
     
-    async def handle_add_balance_amount(self, update: Update, context: ContextTypes.DEFAULT_TYPE, amount: int):
-        """Handle add balance amount selection"""
-        query = update.callback_query
-        await query.answer()
-        
-        try:
-            # Create payment link for balance top-up
-            user_id = query.from_user.id
-            payment_result = self.payment_manager.create_balance_payment(user_id, amount)
-            
-            if payment_result['success']:
-                message = (
-                    f"💰 افزودن موجودی\n\n"
-                    f"💵 مبلغ: {amount:,} تومان\n\n"
-                    f"برای تکمیل پرداخت روی دکمه زیر کلیک کنید:"
-                )
-                
-                keyboard = [
-                    [InlineKeyboardButton("💳 پرداخت آنلاین", url=payment_result['payment_link'])],
-                    [InlineKeyboardButton("🔙 بازگشت", callback_data="add_balance")]
-                ]
-                reply_markup = InlineKeyboardMarkup(keyboard)
-                
-                await query.edit_message_text(message, reply_markup=reply_markup)
-            else:
-                error_message = payment_result.get('message', 'خطای نامشخص')
-                await query.edit_message_text(f"❌ {error_message}")
-                
-                # Report payment failure
-                if self.reporting_system:
-                    user_data = self.db.get_user(user_id)
-                    if user_data:
-                        await self.reporting_system.report_payment_failed(
-                            user_data, amount, 'gateway', error_message
-                        )
-                
-        except Exception as e:
-            logger.error(f"Error handling add balance amount: {e}")
-            await query.edit_message_text("❌ خطا در ایجاد لینک پرداخت.")
-            
-            # Report system error
-            if self.reporting_system:
-                await self.reporting_system.report_system_error(
-                    'payment_link_creation', str(e), 'telegram_bot', 'بالا'
-                )
-    
     async def handle_custom_balance_text_input(self, update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
         """Handle custom balance amount text input"""
         try:
@@ -13248,7 +13343,22 @@ class VPNBot:
             
             if success and client_data:
                 # Get subscription link
-                subscription_link = client_data.get('subscription_link', '')
+                subscription_link = client_data.get('subscription_link') or client_data.get('config_link') or client_data.get('subscription_url')
+                
+                # If still empty, try to construct it from panel subscription_url
+                if not subscription_link and client_data.get('sub_id'):
+                    sub_url = panel.get('subscription_url', '')
+                    if sub_url:
+                        # Clean up sub_url
+                        if sub_url.endswith('/sub') or sub_url.endswith('/sub/'):
+                            base_url = sub_url.rstrip('/')
+                            subscription_link = f"{base_url}/{client_data['sub_id']}"
+                        elif '/sub' in sub_url:
+                            subscription_link = f"{sub_url}/{client_data['sub_id']}"
+                        else:
+                            subscription_link = f"{sub_url}/sub/{client_data['sub_id']}"
+                        
+                        logger.info(f"✅ Constructed subscription link: {subscription_link}")
                 
                 # Use configured inbound_id for test account, otherwise use from client_data
                 inbound_id_to_save = test_account_inbound_id if (test_account_panel_id == panel_id and test_account_inbound_id) else client_data.get('inbound_id', 1)
@@ -14881,7 +14991,447 @@ class VPNBot:
             await update.message.reply_text("❌ خطا در ایجاد کد هدیه.")
             context.user_data.clear()
 
-from telegram.request import HTTPXRequest
+
+
+    async def show_financial_management(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Show financial management menu"""
+        query = update.callback_query
+        await query.answer()
+        
+        try:
+            user_id = update.effective_user.id
+            if not self.db.is_admin(user_id):
+                await query.edit_message_text("❌ دسترسی غیرمجاز.")
+                return
+            
+            message = """
+👑 **پنل مدیریت**
+
+لطفاً یکی از گزینه‌های زیر را انتخاب کنید:
+            """
+            
+            reply_markup = ButtonLayout.create_financial_management_menu()
+            await query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+            
+        except Exception as e:
+            logger.error(f"Error showing financial management: {e}")
+            await query.edit_message_text("❌ خطا در نمایش مدیریت مالی.")
+
+    async def show_card_settings(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Show card settings menu"""
+        query = update.callback_query
+        await query.answer()
+        
+        try:
+            user_id = update.effective_user.id
+            if not self.db.is_admin(user_id):
+                await query.edit_message_text("❌ دسترسی غیرمجاز.")
+                return
+            
+            # Get current card info
+            card_number = self.db.get_bot_text('card_number')
+            card_owner = self.db.get_bot_text('card_owner')
+            
+            card_num_text = card_number['text_content'] if card_number else "تعیین نشده"
+            card_owner_text = card_owner['text_content'] if card_owner else "تعیین نشده"
+            
+            message = f"""
+💳 **تنظیمات کارت به کارت**
+
+شماره کارت فعلی:
+`{card_num_text}`
+
+نام صاحب کارت:
+`{card_owner_text}`
+
+برای تغییر هر کدام روی دکمه مربوطه کلیک کنید.
+            """
+            
+            keyboard = [
+                [InlineKeyboardButton("✏️ تغییر شماره کارت", callback_data="set_card_number")],
+                [InlineKeyboardButton("✏️ تغییر نام صاحب کارت", callback_data="set_card_owner")],
+                [InlineKeyboardButton("🔙 بازگشت", callback_data="financial_management")]
+            ]
+            
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+            
+        except Exception as e:
+            logger.error(f"Error showing card settings: {e}")
+            await query.edit_message_text("❌ خطا در نمایش تنظیمات کارت.")
+
+    async def prompt_card_number(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Prompt admin to enter card number"""
+        query = update.callback_query
+        await query.answer()
+        
+        context.user_data['awaiting_card_number'] = True
+        
+        message = """
+💳 **تغییر شماره کارت**
+
+لطفاً شماره کارت جدید را وارد کنید (16 رقم):
+        """
+        
+        keyboard = [[InlineKeyboardButton("❌ انصراف", callback_data="card_settings")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+
+    async def prompt_card_owner(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Prompt admin to enter card owner name"""
+        query = update.callback_query
+        await query.answer()
+        
+        context.user_data['awaiting_card_owner'] = True
+        
+        message = """
+👤 **تغییر نام صاحب کارت**
+
+لطفاً نام صاحب کارت را وارد کنید:
+        """
+        
+        keyboard = [[InlineKeyboardButton("❌ انصراف", callback_data="card_settings")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+
+    async def handle_card_settings_input(self, update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
+        """Handle input for card settings"""
+        user_id = update.effective_user.id
+        
+        if context.user_data.get('awaiting_card_number'):
+            # Validate card number (simple check)
+            if not text.isdigit() or len(text) != 16:
+                await update.message.reply_text("❌ شماره کارت باید 16 رقم باشد. لطفاً دوباره تلاش کنید:")
+                return
+            
+            # Save card number
+            self.db.create_bot_text(
+                text_key='card_number',
+                text_category='payment',
+                text_content=text,
+                description='شماره کارت جهت واریز وجه',
+                updated_by=self.db.get_user(user_id)['id']
+            )
+            
+            context.user_data['awaiting_card_number'] = False
+            await update.message.reply_text("✅ شماره کارت با موفقیت ذخیره شد.")
+            
+            # Show settings again
+            # We can't easily edit the previous message here, so we send a new one or just let them navigate back
+            # Ideally we would show the menu again
+            
+        elif context.user_data.get('awaiting_card_owner'):
+            # Save card owner
+            self.db.create_bot_text(
+                text_key='card_owner',
+                text_category='payment',
+                text_content=text,
+                description='نام صاحب کارت جهت واریز وجه',
+                updated_by=self.db.get_user(user_id)['id']
+            )
+            
+            context.user_data['awaiting_card_owner'] = False
+            await update.message.reply_text("✅ نام صاحب کارت با موفقیت ذخیره شد.")
+
+    async def show_card_payment(self, update: Update, context: ContextTypes.DEFAULT_TYPE, invoice_id: int):
+        """Show card payment details and ask for receipt"""
+        query = update.callback_query
+        await query.answer()
+        
+        try:
+            # Get invoice details
+            invoice = self.db.get_invoice(invoice_id)
+            if not invoice:
+                await query.edit_message_text("❌ فاکتور یافت نشد.")
+                return
+            
+            # Get card info
+            card_number = self.db.get_bot_text('card_number')
+            card_owner = self.db.get_bot_text('card_owner')
+            
+            if not card_number or not card_owner:
+                await query.edit_message_text("❌ اطلاعات کارت تنظیم نشده است. لطفاً با پشتیبانی تماس بگیرید.")
+                return
+            
+            card_num_text = card_number['text_content']
+            card_owner_text = card_owner['text_content']
+            amount = invoice['amount']
+            
+            message = f"""
+💳 **پرداخت کارت به کارت**
+
+لطفاً مبلغ **{amount:,} تومان** را به شماره کارت زیر واریز نمایید:
+
+💳 شماره کارت:
+`{card_num_text}`
+
+👤 به نام: **{card_owner_text}**
+
+⚠️ **نکته مهم:** پس از واریز، لطفاً عکس رسید پرداخت را همینجا ارسال کنید.
+            """
+            
+            context.user_data['awaiting_receipt'] = True
+            context.user_data['receipt_invoice_id'] = invoice_id
+            
+            keyboard = [[InlineKeyboardButton("🔙 بازگشت", callback_data=f"payment_methods_{invoice_id}")]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+            
+        except Exception as e:
+            logger.error(f"Error showing card payment: {e}")
+            await query.edit_message_text("❌ خطا در نمایش اطلاعات پرداخت.")
+
+    async def handle_receipt_upload(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle receipt image upload"""
+        if not context.user_data.get('awaiting_receipt'):
+            return
+        
+        try:
+            photo = update.message.photo[-1]
+            file_id = photo.file_id
+            invoice_id = context.user_data.get('receipt_invoice_id')
+            user = update.effective_user
+            
+            # Save receipt info (we store file_id for now, or could download it)
+            # Ideally we should store it in DB. We added receipt_image column.
+            
+            # Update invoice status to 'pending_approval' (we might need to add this status if not exists, or use 'pending')
+            # For now let's assume 'pending' is fine, but we note it's card payment
+            
+            # Send to receipts channel
+            receipts_channel_id = self.bot_config.get('receipts_channel_id')
+            if not receipts_channel_id:
+                await update.message.reply_text("❌ خطای سیستم: کانال رسیدها تنظیم نشده است.")
+                return
+            
+            caption = f"""
+🧾 **رسید پرداخت جدید**
+
+👤 کاربر: {user.first_name} (ID: {user.id})
+💰 مبلغ فاکتور: {self.db.get_invoice(invoice_id)['amount']:,} تومان
+🔢 شماره فاکتور: #{invoice_id}
+
+جهت تایید یا رد پرداخت از دکمه‌های زیر استفاده کنید.
+            """
+            
+            keyboard = [
+                [
+                    InlineKeyboardButton("✅ تایید پرداخت", callback_data=f"approve_receipt_{invoice_id}"),
+                    InlineKeyboardButton("❌ رد پرداخت", callback_data=f"reject_receipt_{invoice_id}")
+                ]
+            ]
+            
+            # Send to channel
+            await context.bot.send_photo(
+                chat_id=receipts_channel_id,
+                photo=file_id,
+                caption=caption,
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+            
+            # Update invoice
+            # We can store the file_id in receipt_image column
+            with self.db.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("UPDATE invoices SET receipt_image = %s, payment_method = 'card' WHERE id = %s", (file_id, invoice_id))
+                conn.commit()
+            
+            await update.message.reply_text("✅ رسید شما دریافت شد و پس از تایید ادمین، موجودی شما افزایش می‌یابد/سرویس فعال می‌شود.")
+            
+            # Clear state
+            context.user_data['awaiting_receipt'] = False
+            context.user_data.pop('receipt_invoice_id', None)
+            
+        except Exception as e:
+            logger.error(f"Error handling receipt upload: {e}")
+            await update.message.reply_text("❌ خطا در دریافت رسید. لطفاً دوباره تلاش کنید.")
+
+    async def handle_approve_receipt(self, update: Update, context: ContextTypes.DEFAULT_TYPE, invoice_id: int):
+        """Approve a payment receipt"""
+        query = update.callback_query
+        
+        try:
+            # invoice_id is passed as argument
+            invoice = self.db.get_invoice(invoice_id)
+            
+            if not invoice:
+                await query.answer("❌ فاکتور یافت نشد.", show_alert=True)
+                return
+            
+            if invoice['status'] == 'paid' or invoice['status'] == 'completed':
+                await query.answer("⚠️ این فاکتور قبلاً پرداخت شده است.", show_alert=True)
+                return
+            
+            # Process payment
+            user_id = invoice['user_id']
+            amount = invoice['amount']
+            purchase_type = invoice.get('purchase_type', 'balance')
+            
+            # 1. Update invoice status to paid
+            self.db.update_invoice_status(invoice_id, 'paid', payment_method='card', transaction_id=f"card_{invoice_id}")
+            
+            # 2. Fulfill order
+            user = self.db.get_user_by_id(user_id)
+            if not user:
+                await query.answer("❌ کاربر یافت نشد.", show_alert=True)
+                return
+
+            if purchase_type == 'balance':
+                # Just add balance
+                self.db.update_user_balance(user['telegram_id'], amount, 'deposit', f"شارژ کیف پول (فاکتور #{invoice_id})")
+                
+                # Notify user
+                try:
+                    await context.bot.send_message(
+                        chat_id=user['telegram_id'],
+                        text=f"✅ پرداخت شما تایید شد.\n💰 مبلغ {amount:,} تومان به کیف پول شما اضافه شد."
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to notify user {user_id}: {e}")
+                    
+            elif purchase_type in ['service', 'plan']:
+                # Create service
+                panel_id = invoice['panel_id']
+                gb_amount = invoice['gb_amount']
+                duration_days = invoice.get('duration_days', 30)
+                product_id = invoice.get('product_id')
+                
+                # Format client name
+                from username_formatter import UsernameFormatter
+                client_name = UsernameFormatter.format_client_name(user['telegram_id'])
+                
+                # Create service
+                success, message, client_data = self.admin_manager.create_client_on_all_panel_inbounds(
+                    panel_id=panel_id,
+                    client_name=client_name,
+                    expire_days=duration_days,
+                    total_gb=gb_amount
+                )
+                
+                if success and client_data:
+                    # Save to DB
+                    inbounds = self.admin_manager.get_panel_inbounds(panel_id)
+                    inbound_id = client_data.get('inbound_id', inbounds[0]['id'] if inbounds else 0)
+                    
+                    # Calculate expires_at
+                    from datetime import datetime, timedelta
+                    expires_at = datetime.now() + timedelta(days=duration_days) if duration_days > 0 else None
+                    
+                    client_id = self.db.add_client(
+                        user_id=user_id,
+                        panel_id=panel_id,
+                        client_name=client_name,
+                        client_uuid=client_data.get('id', ''),
+                        inbound_id=inbound_id,
+                        protocol=client_data.get('protocol', 'vless'),
+                        expire_days=duration_days,
+                        total_gb=gb_amount,
+                        expires_at=expires_at.isoformat() if expires_at else None,
+                        product_id=product_id
+                    )
+                    
+                    if client_id > 0:
+                        # Update invoice to completed
+                        self.db.update_invoice_status(invoice_id, 'completed')
+                        
+                        # Notify user
+                        sub_link = client_data.get('subscription_link') or client_data.get('subscription_url', '')
+                        msg = f"""
+✅ سرویس شما با موفقیت ایجاد شد!
+
+👤 نام سرویس: `{client_name}`
+📊 حجم: {gb_amount} گیگابایت
+📅 مدت: {duration_days} روز
+
+🔗 لینک اشتراک:
+`{sub_link}`
+"""
+                        try:
+                            await context.bot.send_message(
+                                chat_id=user['telegram_id'],
+                                text=msg,
+                                parse_mode='Markdown'
+                            )
+                        except Exception as e:
+                            logger.error(f"Failed to notify user {user_id}: {e}")
+                    else:
+                        await context.bot.send_message(
+                            chat_id=user['telegram_id'],
+                            text=f"✅ پرداخت تایید شد اما خطا در ذخیره سرویس رخ داد. لطفاً با پشتیبانی تماس بگیرید.\nکد پیگیری: {invoice_id}"
+                        )
+                else:
+                     # Failed to create on panel, but paid. Add to balance instead?
+                     self.db.update_user_balance(user['telegram_id'], amount, 'deposit', f"برگشت وجه (خطا در ایجاد سرویس) - فاکتور #{invoice_id}")
+                     await context.bot.send_message(
+                        chat_id=user['telegram_id'],
+                        text=f"✅ پرداخت تایید شد اما ایجاد سرویس با خطا مواجه شد.\n💰 مبلغ {amount:,} تومان به کیف پول شما برگشت داده شد.\nلطفاً مجدداً تلاش کنید."
+                    )
+
+            # Report service purchase
+            if self.reporting_system:
+                try:
+                    service_data = {
+                        'service_name': client_name,
+                        'data_amount': product['volume_gb'] if purchase_type == 'plan' else gb_amount,
+                        'amount': invoice['amount'],
+                        'panel_name': panel['name'],
+                        'purchase_type': 'plan' if purchase_type == 'plan' else 'gigabyte',
+                        'payment_method': 'card'
+                    }
+                    await self.reporting_system.report_service_purchased(user_obj, service_data)
+                except Exception as e:
+                    logger.error(f"Failed to send service purchase report: {e}")
+
+            # Update message in channel
+            await query.edit_message_caption(
+                caption=query.message.caption + "\n\n✅ **تایید شد** توسط " + update.effective_user.first_name
+            )
+            
+        except Exception as e:
+            logger.error(f"Error approving receipt: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            await query.answer("❌ خطا در تایید پرداخت.", show_alert=True)
+
+    async def handle_reject_receipt(self, update: Update, context: ContextTypes.DEFAULT_TYPE, invoice_id: int):
+        """Reject a payment receipt"""
+        query = update.callback_query
+        
+        try:
+            # invoice_id is passed as argument
+            invoice = self.db.get_invoice(invoice_id)
+            
+            if not invoice:
+                await query.answer("❌ فاکتور یافت نشد.", show_alert=True)
+                return
+                
+            user_id = invoice['user_id']
+            
+            # Notify user
+            try:
+                user = self.db.get_user_by_id(user_id)
+                if user and user.get('telegram_id'):
+                    await context.bot.send_message(
+                        chat_id=user['telegram_id'],
+                        text=f"❌ پرداخت شما به مبلغ {invoice['amount']:,} تومان رد شد.\nدر صورت اشتباه، لطفاً با پشتیبانی تماس بگیرید."
+                    )
+                else:
+                    logger.error(f"Could not notify user {user_id}: Telegram ID not found")
+            except Exception as e:
+                logger.error(f"Could not send notification to user {user_id}: {e}")
+            
+            # Update message in channel
+            await query.edit_message_caption(
+                caption=query.message.caption + "\n\n❌ **رد شد** توسط " + update.effective_user.first_name
+            )
+            
+        except Exception as e:
+            logger.error(f"Error rejecting receipt: {e}")
+            await query.answer("❌ خطا در رد پرداخت.", show_alert=True)
+
 
 class NoProxyRequest(HTTPXRequest):
     """Custom request class to disable system proxies"""
@@ -14914,6 +15464,7 @@ def main():
     application.add_handler(CommandHandler("myid", bot.myid_command))
     application.add_handler(CallbackQueryHandler(bot.handle_callback_query))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, bot.handle_text_message))
+    application.add_handler(MessageHandler(filters.PHOTO, bot.handle_receipt_upload))
     
     # Add error handler
     async def error_handler(update, context):
@@ -14965,9 +15516,9 @@ def main():
     optimized_monitor = OptimizedMonitor(bot.db, bot.admin_manager, bot=None)
     
     def start_optimized_monitoring():
-        logger.info("🚀 Starting OptimizedMonitor (updates every 3 minutes)")
+        logger.info("🚀 Starting OptimizedMonitor (updates every 10 minutes)")
         try:
-            optimized_monitor.start_monitoring(interval_seconds=180)  # 3 minutes = 180 seconds
+            optimized_monitor.start_monitoring(interval_seconds=600)  # 10 minutes = 600 seconds
         except Exception as e:
             logger.error(f"❌ Error in OptimizedMonitor loop: {e}")
             import traceback

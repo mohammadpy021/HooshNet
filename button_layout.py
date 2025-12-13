@@ -509,6 +509,12 @@ class ProfessionalButtonLayout:
                 callback_data="payment_minimum_error"
             )])
         
+        # Card to Card payment
+        keyboard.append([InlineKeyboardButton(
+            "💳 کارت به کارت",
+            callback_data=f"pay_card_{invoice_id}"
+        )])
+        
         # Navigation
         keyboard.append([InlineKeyboardButton(
             "◀️ بازگشت",
@@ -646,28 +652,45 @@ class ProfessionalButtonLayout:
                 )
             ])
         
-        # Core admin functions (2 columns for better layout)
+        # --- Core Management Section ---
+        # Grouping core entities: Users, Panels, Products
         keyboard.append([
-            InlineKeyboardButton("👥 کاربران", callback_data="manage_users"),
-            InlineKeyboardButton("🖥️ پنل‌ها", callback_data="manage_panels")
+            InlineKeyboardButton("👥 مدیریت کاربران", callback_data="manage_users"),
+            InlineKeyboardButton("🖥️ مدیریت پنل‌ها", callback_data="manage_panels")
+        ])
+        keyboard.append([
+            InlineKeyboardButton("📦 مدیریت محصولات", callback_data="manage_products")
+        ])
+
+        # --- Financial & System Section ---
+        # Grouping financial and system stats
+        keyboard.append([
+            InlineKeyboardButton("💰 مدیریت مالی", callback_data="financial_management"),
+            InlineKeyboardButton("📊 آمار و گزارشات", callback_data="admin_stats")
+        ])
+
+        # --- Settings & Logs Section ---
+        # Grouping configuration and logs
+        keyboard.append([
+            InlineKeyboardButton("⚙️ تنظیمات سیستم", callback_data="system_settings"),
+            InlineKeyboardButton("📋 لاگ‌های سیستم", callback_data="system_logs")
         ])
         
-        keyboard.append([
-            InlineKeyboardButton("📊 آمار سیستم", callback_data="admin_stats"),
-            InlineKeyboardButton("📋 لاگ‌ها", callback_data="system_logs")
-        ])
-        
-        # System settings (full width)
-        keyboard.append([
-            InlineKeyboardButton("⚙️ تنظیمات سیستم", callback_data="system_settings")
-        ])
-        
-        # Navigation
+        # --- Navigation ---
         keyboard.append([InlineKeyboardButton(
-            "◀️ بازگشت به منو اصلی",
+            "🔙 بازگشت به منو اصلی",
             callback_data="main_menu"
         )])
         
+        return InlineKeyboardMarkup(keyboard)
+
+    @staticmethod
+    def create_financial_management_menu() -> InlineKeyboardMarkup:
+        """Create financial management menu"""
+        keyboard = [
+            [InlineKeyboardButton("💳 ثبت شماره کارت", callback_data="card_settings")],
+            [InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel")]
+        ]
         return InlineKeyboardMarkup(keyboard)
     
     @staticmethod

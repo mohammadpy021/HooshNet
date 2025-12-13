@@ -166,9 +166,16 @@ class AdminManager:
             
             # Determine panel type and handle accordingly
             if isinstance(manager, (MarzbanPanelManager, RebeccaPanelManager)):
-                # Marzban/Rebecca handle "all inbounds" logic internally
+                # For Rebecca/Marzban, we should use the Main Service (default_inbound_id)
+                # Fetch panel details to get default_inbound_id
+                panel = self.db.get_panel(panel_id)
+                main_service_id = panel.get('default_inbound_id') if panel else 0
+                
+                if isinstance(manager, RebeccaPanelManager) and not main_service_id:
+                    logger.warning(f"⚠️ No Main Service (default_inbound_id) selected for Rebecca panel {panel_id}. Client might be created without specific service.")
+
                 client = manager.create_client(
-                    inbound_id=0,  # Not used for Marzban/Rebecca
+                    inbound_id=main_service_id,  # Pass Main Service ID
                     client_name=client_name,
                     protocol=protocol,
                     expire_days=expire_days,

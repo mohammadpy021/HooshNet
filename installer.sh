@@ -75,6 +75,12 @@ read -p "Enter Channel Link (e.g., https://t.me/MyChannel): " CHANNEL_LINK
 read -p "Enter Reports Channel ID (numeric, optional, press Enter to skip): " REPORTS_CHANNEL_ID
 REPORTS_CHANNEL_ID=${REPORTS_CHANNEL_ID:-0}
 
+read -p "Enter Receipts Channel ID (numeric, for payment slips): " RECEIPTS_CHANNEL_ID
+while [[ ! "$RECEIPTS_CHANNEL_ID" =~ ^-?[0-9]+$ ]]; do
+    echo -e "${RED}Receipts Channel ID must be a number.${NC}"
+    read -p "Enter Receipts Channel ID: " RECEIPTS_CHANNEL_ID
+done
+
 # Payment configuration removed as per request
 
 echo -e "${BLUE}--- Web Application Configuration ---${NC}"
@@ -120,6 +126,7 @@ BOT_TOKEN=$BOT_TOKEN
 ADMIN_ID=$ADMIN_ID
 BOT_USERNAME=$BOT_USERNAME
 REPORTS_CHANNEL_ID=$REPORTS_CHANNEL_ID
+RECEIPTS_CHANNEL_ID=$RECEIPTS_CHANNEL_ID
 CHANNEL_ID=$CHANNEL_ID
 CHANNEL_LINK=$CHANNEL_LINK
 WEBAPP_URL=https://$DOMAIN
@@ -157,6 +164,11 @@ $MYSQL_CMD -e "FLUSH PRIVILEGES;"
 
 if [ $? -eq 0 ]; then
     echo -e "${GREEN}Database configured successfully.${NC}"
+    
+    # Apply migrations
+    echo -e "${YELLOW}Applying database migrations...${NC}"
+    "$PROJECT_DIR/venv/bin/python" -c "from professional_database import ProfessionalDatabaseManager; db = ProfessionalDatabaseManager(); db.check_and_update_schema()"
+    
 else
     echo -e "${RED}Database configuration failed. Please check your MySQL password.${NC}"
     exit 1

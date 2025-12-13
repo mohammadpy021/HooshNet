@@ -953,9 +953,15 @@ def user_photo():
 
 # Routes
 @app.route('/')
-def index():
+@app.route('/<bot_name>')
+def index(bot_name=None):
     """Landing page with Telegram Login"""
     logger.info(f"Accessing index page. Session: {dict(session)}")
+    
+    # Store bot_name in session if provided
+    if bot_name:
+        session['bot_name'] = bot_name
+        
     if 'user_id' in session:
         logger.info(f"User {session['user_id']} already logged in, redirecting to dashboard")
         return redirect(url_for('dashboard'))
@@ -1981,11 +1987,22 @@ def api_get_panels():
         # Cache panels list for 10 minutes
         from cache_utils import cache_key_panels_active
         panels_cache_key = cache_key_panels_active()
-        panels = cache.get_or_set(
-            panels_cache_key,
-            lambda: admin_manager.get_panels_list(),
-            ttl=600
-        )
+        
+        # Try to get from cache
+        panels = cache.get(panels_cache_key)
+        
+        if panels is None:
+            # Not in cache, fetch from DB
+            # Use get_all_panels() which is the correct method in AdminManager
+            panels = admin_manager.get_all_panels()
+            
+            # Smart caching:
+            # If we got panels, cache for 10 minutes
+            if panels:
+                cache.set(panels_cache_key, panels, ttl=600)
+            # If empty, do NOT cache to allow immediate retry
+            # else:
+            #    cache.set(panels_cache_key, panels, ttl=30)
         
         # Filter and format panels
         active_panels = []
@@ -2143,14 +2160,12 @@ def api_create_service():
         
         # Input validation
         panel_id = validate_panel_id(data.get('panel_id'))
-        payment_method = data.get('payment_method')
+        # Force payment method to 'card'
+        payment_method = 'card'
         purchase_type = data.get('purchase_type', 'gigabyte')  # 'gigabyte' or 'plan'
         
-        if not panel_id or not payment_method:
+        if not panel_id:
             return jsonify({'success': False, 'message': 'اطلاعات ناقص است'}), 400
-        
-        if payment_method not in ['balance', 'gateway']:
-            return jsonify({'success': False, 'message': 'روش پرداخت نامعتبر است'}), 400
         
         # Get panel
         db_instance = get_db()
@@ -2531,7 +2546,7 @@ def api_create_service():
                         logger.error(traceback.format_exc())
                     
                     # Get subscription link from client_data
-                    subscription_link = client_data.get('subscription_link', '')
+                    subscription_link = client_data.get('subscription_link') or client_data.get('subscription_url', '')
                     
                     return jsonify({
                         'success': True,
@@ -2558,6 +2573,58 @@ def api_create_service():
                     safe_message = 'خطا در ایجاد سرویس روی پنل'
                 return jsonify({'success': False, 'message': safe_message}), 500
         
+        elif payment_method == 'card':
+            # Create invoice for card payment
+            invoice_notes = None
+            if is_renewal and renew_service_id:
+                invoice_notes = f'renew_service_id: {renew_service_id}'
+            
+            db_instance = get_db()
+            user_db = db_instance.get_user(user_id)
+            
+            invoice_id = db_instance.add_invoice(
+                user_id=user_db['id'],
+                panel_id=panel_id,
+                gb_amount=int(volume_gb),
+                amount=total_price,
+                payment_method='card',
+                status='pending',
+                product_id=product_id if purchase_type == 'plan' else None,
+                duration_days=expire_days if purchase_type == 'plan' else None,
+                purchase_type=purchase_type,
+                notes=invoice_notes
+            )
+            
+            if not invoice_id:
+                return jsonify({'success': False, 'message': 'خطا در ایجاد فاکتور'}), 500
+            
+            # Apply discount code if provided
+            if discount_code and discount_amount > 0:
+                from discount_manager import DiscountCodeManager
+                discount_manager = DiscountCodeManager(db_instance)
+                discount_result = discount_manager.validate_and_apply_discount(discount_code, user_id, original_price)
+                if discount_result['success']:
+                    discount_code_obj = db_instance.get_discount_code(discount_code)
+                    if discount_code_obj:
+                        with db_instance.get_connection() as conn:
+                            cursor = conn.cursor()
+                            cursor.execute('''
+                                UPDATE invoices 
+                                SET discount_code_id = %s, 
+                                    discount_amount = %s,
+                                    original_amount = %s
+                                WHERE id = %s
+                            ''', (discount_code_obj['id'], discount_amount, original_price, invoice_id))
+                            conn.commit()
+            
+            return jsonify({
+                'success': True,
+                'payment_required': True,
+                'payment_method': 'card',
+                'invoice_id': invoice_id,
+                'amount': total_price
+            })
+
         elif payment_method == 'gateway':
             # Create invoice for gateway payment
             # Create invoice for gateway payment
@@ -4254,9 +4321,14 @@ def api_admin_activity():
 # ==================== ADMIN PANEL ROUTES ====================
 
 @app.route('/admin')
+@app.route('/<bot_name>/admin')
 @admin_required
-def admin_dashboard():
+def admin_dashboard(bot_name=None):
     """Admin dashboard page"""
+    # Store bot_name in session if provided
+    if bot_name:
+        session['bot_name'] = bot_name
+        
     user_id = session.get('user_id')
     db_instance = get_db()
     user = db_instance.get_user(user_id)
@@ -4514,8 +4586,26 @@ def admin_user_detail(user_id):
     # Get user transactions
     transactions = db_instance.get_user_transactions(user['telegram_id'], limit=100)
     
+    # Get additional stats
+    total_tickets = 0
+    try:
+        with db_instance.get_connection() as conn:
+            cursor = conn.cursor(dictionary=True)
+            cursor.execute('SELECT COUNT(*) as count FROM tickets WHERE user_id = %s', (user['id'],))
+            result = cursor.fetchone()
+            if result:
+                total_tickets = result['count']
+            cursor.close()
+    except Exception as e:
+        logger.error(f"Error getting user stats: {e}")
+
+    stats = {
+        'total_spent': user.get('total_spent', 0),
+        'total_tickets': total_tickets
+    }
+    
     photo_url = session.get('photo_url', '')
-    return render_template('admin/user_detail.html', user=user, admin_user=admin_user, services=services, transactions=transactions, photo_url=photo_url)
+    return render_template('admin/user_detail.html', user=user, admin_user=admin_user, services=services, transactions=transactions, photo_url=photo_url, stats=stats)
 
 @app.route('/admin/products')
 @admin_required
@@ -6380,7 +6470,7 @@ def api_admin_copy_products(source_panel_id, target_panel_id):
             if existing_product:
                 skipped_products += 1
                 continue
-            
+        
             # Create new product
             new_product_id = db_instance.add_product(
                 panel_id=target_panel_id,
@@ -6420,6 +6510,180 @@ def api_admin_copy_products(source_panel_id, target_panel_id):
         import traceback
         logger.error(traceback.format_exc())
         return secure_error_response(e)
+
+@app.route('/api/payment/card-info', methods=['GET'])
+@login_required
+def api_payment_card_info():
+    """Get card information for payment"""
+    try:
+        db_instance = get_db()
+        card_number = db_instance.get_bot_text('card_number')
+        card_owner = db_instance.get_bot_text('card_owner')
+        
+        return jsonify({
+            'success': True,
+            'card_number': card_number['text_content'] if card_number else None,
+            'card_owner': card_owner['text_content'] if card_owner else None
+        })
+    except Exception as e:
+        logger.error(f"Error getting card info: {e}")
+        return secure_error_response(e)
+
+@app.route('/api/payment/upload-receipt', methods=['POST'])
+@login_required
+def api_payment_upload_receipt():
+    """Upload payment receipt"""
+    try:
+        db = get_db()
+        user_id = session.get('user_id')
+        if 'receipt' not in request.files:
+            return jsonify({'success': False, 'message': 'هیچ فایلی ارسال نشده است'}), 400
+            
+        file = request.files['receipt']
+        if file.filename == '':
+            return jsonify({'success': False, 'message': 'نام فایل نامعتبر است'}), 400
+            
+        invoice_id = request.form.get('invoice_id')
+        if not invoice_id:
+            # If no invoice_id, create a balance top-up invoice
+            amount = request.form.get('amount')
+            if not amount:
+                return jsonify({'success': False, 'message': 'مبلغ یا شناسه فاکتور الزامی است'}), 400
+                
+            # Create invoice for balance top-up
+            # create_invoice handles finding a default panel if not provided
+            invoice_id = db.create_invoice(
+                user_id=user_id,
+                amount=int(amount),
+                purchase_type='balance',
+                payment_method='card',
+                description='شارژ کیف پول (کارت به کارت)'
+            )
+            
+            if not invoice_id:
+                return jsonify({'success': False, 'message': 'خطا در ایجاد فاکتور'}), 500
+        
+        # Send to Telegram Receipts Channel
+        from telegram import Bot, InputFile
+        bot_config = get_bot_config()
+        receipts_channel_id = bot_config.get('receipts_channel_id')
+        
+        if not receipts_channel_id:
+            logger.error("Receipts channel ID is missing in bot config")
+            return jsonify({'success': False, 'message': 'خطای سیستم: کانال رسیدها تنظیم نشده است'}), 500
+            
+        logger.info(f"Receipts channel ID: {receipts_channel_id}")
+            
+        # We need to send the file to Telegram.
+        # We can use the bot token to send it.
+        bot = Bot(token=bot_config['token'])
+        
+        # Read file content and wrap in BytesIO
+        import io
+        file_content = file.read()
+        if not file_content:
+            logger.error("Uploaded file is empty")
+            return jsonify({'success': False, 'message': 'فایل آپلود شده خالی است'}), 400
+            
+        file_obj = io.BytesIO(file_content)
+        file_obj.name = file.filename or 'receipt.jpg'
+        
+        # Get user info
+        user = db.get_user(user_id)
+        invoice_data = db.get_invoice(invoice_id)
+        
+        if not invoice_data:
+            return jsonify({'success': False, 'message': 'فاکتور یافت نشد'}), 404
+        
+        caption = f"""
+🧾 رسید پرداخت جدید (وب اپلیکیشن)
+
+👤 کاربر: {user.get('first_name', 'Unknown')} (ID: {user_id})
+💰 مبلغ: {invoice_data['amount']:,} تومان
+🔢 شماره فاکتور: #{invoice_id}
+
+جهت تایید یا رد پرداخت از دکمه‌های زیر استفاده کنید.
+        """
+        
+        from telegram import InlineKeyboardMarkup, InlineKeyboardButton
+        keyboard = [
+            [
+                InlineKeyboardButton("✅ تایید پرداخت", callback_data=f"approve_receipt_{invoice_id}"),
+                InlineKeyboardButton("❌ رد پرداخت", callback_data=f"reject_receipt_{invoice_id}")
+            ]
+        ]
+        
+        # Send photo using requests (synchronous and reliable)
+        import requests
+        import json
+        
+        telegram_success = False
+        try:
+            # Ensure receipts_channel_id is correct type
+            try:
+                if str(receipts_channel_id).lstrip('-').isdigit():
+                    receipts_channel_id = int(receipts_channel_id)
+            except:
+                pass
+
+            url = f"https://api.telegram.org/bot{bot_config['token']}/sendPhoto"
+            
+            # Reset file position
+            file_obj.seek(0)
+            
+            # Construct keyboard manually for JSON serialization
+            keyboard_dict = {
+                'inline_keyboard': [
+                    [
+                        {'text': "✅ تایید پرداخت", 'callback_data': f"approve_receipt_{invoice_id}"},
+                        {'text': "❌ رد پرداخت", 'callback_data': f"reject_receipt_{invoice_id}"}
+                    ]
+                ]
+            }
+            
+            # Prepare data
+            files = {'photo': ('receipt.jpg', file_obj, 'image/jpeg')}
+            data = {
+                'chat_id': receipts_channel_id,
+                'caption': caption,
+                'reply_markup': json.dumps(keyboard_dict)
+            }
+            
+            logger.info(f"Sending receipt photo to channel {receipts_channel_id} for invoice {invoice_id} via requests")
+            
+            response = requests.post(url, files=files, data=data, timeout=30)
+            
+            if response.status_code == 200:
+                logger.info("Receipt sent successfully to Telegram")
+                telegram_success = True
+            else:
+                logger.error(f"Telegram send error: {response.status_code} - {response.text}")
+                telegram_success = False
+            
+        except Exception as e:
+            logger.error(f"Telegram send error: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            telegram_success = False
+                
+        if telegram_success:
+            # Update invoice
+            with db.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("UPDATE invoices SET payment_method = 'card', status = 'pending_approval' WHERE id = %s", (invoice_id,))
+                conn.commit()
+                
+            return jsonify({'success': True, 'message': 'رسید با موفقیت ارسال شد'})
+        else:
+            return jsonify({'success': False, 'message': 'خطا در ارسال رسید به تلگرام (مشکل در بات)'}), 500
+
+    except Exception as e:
+        logger.error(f"Error uploading receipt: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return secure_error_response(e)
+            
+
 
 @app.route('/api/admin/menu-layout', methods=['GET'])
 @admin_required

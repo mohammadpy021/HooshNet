@@ -803,6 +803,31 @@ class ProfessionalDatabaseManager:
                 ''')
                 logger.info("✅ Migration v1.2_add_panel_type completed")
             
+            # Migration 4: Add receipt_image to invoices table
+            cursor.execute("SELECT version FROM database_migrations WHERE version = 'v1.3_add_receipt_image'")
+            if not cursor.fetchone():
+                logger.info("Running migration: Add receipt_image to invoices table")
+                
+                # Check if column already exists
+                cursor.execute("""
+                    SELECT COLUMN_NAME 
+                    FROM INFORMATION_SCHEMA.COLUMNS 
+                    WHERE TABLE_SCHEMA = DATABASE() 
+                    AND TABLE_NAME = 'invoices'
+                """)
+                columns = [row['COLUMN_NAME'] for row in cursor.fetchall()]
+                
+                if 'receipt_image' not in columns:
+                    cursor.execute('ALTER TABLE invoices ADD COLUMN receipt_image TEXT')
+                    logger.info("✅ Added receipt_image column to invoices table")
+                
+                # Mark migration as applied
+                cursor.execute('''
+                    INSERT INTO database_migrations (version, description)
+                    VALUES ('v1.3_add_receipt_image', 'Add receipt_image field to invoices table for card to card payments')
+                ''')
+                logger.info("✅ Migration v1.3_add_receipt_image completed")
+            
             # Migration 5: Add notified_70_percent and status to clients table
             cursor.execute("SELECT version FROM database_migrations WHERE version = 'v1.4_add_service_monitoring_fields'")
             if not cursor.fetchone():
@@ -1827,6 +1852,49 @@ class ProfessionalDatabaseManager:
         except Exception as e:
             logger.error(f"Error updating user balance: {e}")
             return False
+
+    def add_balance(self, user_id: int, amount: int, transaction_type: str, description: str = None) -> bool:
+        """Add balance to user (using Internal ID)"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor(dictionary=True)
+                
+                # Update balance
+                cursor.execute('UPDATE users SET balance = balance + %s WHERE id = %s', (amount, user_id))
+                
+                # Log transaction
+                cursor.execute('''
+                    INSERT INTO balance_transactions (user_id, amount, transaction_type, description)
+                    VALUES (%s, %s, %s, %s)
+                ''', (user_id, amount, transaction_type, description))
+                
+                conn.commit()
+                return True
+        except Exception as e:
+            logger.error(f"Error adding balance: {e}")
+            return False
+    
+    def deduct_balance(self, user_id: int, amount: int, transaction_type: str, invoice_id: int = None) -> bool:
+        """Deduct balance from user (using Internal ID)"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor(dictionary=True)
+                
+                # Update balance (subtract)
+                cursor.execute('UPDATE users SET balance = balance - %s WHERE id = %s', (amount, user_id))
+                
+                # Log transaction
+                description = f"Payment for invoice #{invoice_id}" if invoice_id else "Balance deduction"
+                cursor.execute('''
+                    INSERT INTO balance_transactions (user_id, amount, transaction_type, description)
+                    VALUES (%s, %s, %s, %s)
+                ''', (user_id, -amount, transaction_type, description))
+                
+                conn.commit()
+                return True
+        except Exception as e:
+            logger.error(f"Error deducting balance: {e}")
+            return False
     
     def get_user_balance(self, telegram_id: int) -> int:
         """Get user balance"""
@@ -1924,6 +1992,10 @@ class ProfessionalDatabaseManager:
         except Exception as e:
             logger.error(f"Error getting panels: {e}")
             return []
+
+    def get_all_panels(self) -> List[Dict]:
+        """Get all panels (active and inactive) - Alias for get_panels(active_only=False)"""
+        return self.get_panels(active_only=False)
     
     def update_panel(self, panel_id: int, name: str = None, url: str = None,
                      username: str = None, password: str = None, 
@@ -3147,7 +3219,72 @@ class ProfessionalDatabaseManager:
             logger.error(f"Error finding service by client_uuid: {e}")
             return None
     
-    # Invoice Management Methods
+    def create_invoice(self, user_id: int, amount: int, description: str = None, 
+                      payment_method: str = 'card', panel_id: int = None, 
+                      purchase_type: str = 'balance') -> int:
+        """
+        Create an invoice (wrapper for add_invoice to support simplified calls)
+        Handles finding a default panel if panel_id is not provided.
+        Handles converting Telegram ID to Internal User ID.
+        """
+        try:
+            internal_user_id = user_id
+            
+            with self.get_connection() as conn:
+                cursor = conn.cursor(dictionary=True)
+                
+                # Resolve User ID (Telegram ID -> Internal ID)
+                # First check if user_id exists as telegram_id
+                cursor.execute('SELECT id FROM users WHERE telegram_id = %s', (user_id,))
+                user_row = cursor.fetchone()
+                
+                if user_row:
+                    internal_user_id = user_row['id']
+                else:
+                    # Check if it exists as internal id
+                    cursor.execute('SELECT id FROM users WHERE id = %s', (user_id,))
+                    if not cursor.fetchone():
+                        logger.error(f"Cannot create invoice: User {user_id} not found")
+                        return 0
+
+                # If panel_id is not provided, try to find a default one
+                if not panel_id:
+                    # Try to get first active panel
+                    cursor.execute('SELECT id FROM panels WHERE is_active = 1 LIMIT 1')
+                    row = cursor.fetchone()
+                    if row:
+                        panel_id = row['id']
+                    else:
+                        # Fallback to any panel
+                        cursor.execute('SELECT id FROM panels LIMIT 1')
+                        row = cursor.fetchone()
+                        if row:
+                            panel_id = row['id']
+                        else:
+                            # Create a default system panel if no panels exist
+                            logger.warning("No panels found. Creating default system panel for invoice creation.")
+                            cursor.execute('''
+                                INSERT INTO panels (name, url, username, password, api_endpoint, is_active)
+                                VALUES ('System Default', 'http://localhost', 'admin', 'admin', '/api', 0)
+                            ''')
+                            panel_id = cursor.lastrowid
+                            conn.commit()
+                            logger.info(f"Created default system panel with ID {panel_id}")
+            
+            return self.add_invoice(
+                user_id=internal_user_id,
+                panel_id=panel_id,
+                gb_amount=0,  # Default for balance/unspecified
+                amount=amount,
+                payment_method=payment_method,
+                notes=description,
+                purchase_type=purchase_type
+            )
+        except Exception as e:
+            logger.error(f"Error in create_invoice: {e}")
+            return 0
+
+
     def add_invoice(self, user_id: int, panel_id: int, gb_amount: int, 
                    amount: int, payment_method: str = None, status: str = 'pending',
                    discount_code_id: int = None, discount_amount: int = None, original_amount: int = None,
@@ -3186,15 +3323,39 @@ class ProfessionalDatabaseManager:
             logger.error(f"Error updating invoice product info: {e}")
             return False
     
-    def update_invoice_status(self, invoice_id: int, status: str, order_id: str = None) -> bool:
+    def update_invoice_status(self, invoice_id: int, status: str, order_id: str = None, 
+                             payment_method: str = None, transaction_id: str = None) -> bool:
         """Update invoice status"""
         try:
             with self.get_connection() as conn:
                 cursor = conn.cursor(dictionary=True)
-                cursor.execute('''
-                    UPDATE invoices SET status = %s, order_id = %s, paid_at = CURRENT_TIMESTAMP
-                    WHERE id = %s
-                ''', (status, order_id, invoice_id))
+                
+                # Build query dynamically or use COALESCE to avoid overwriting with NULL if not provided
+                # However, for simplicity and since we usually want to set them if provided:
+                
+                query = '''
+                    UPDATE invoices 
+                    SET status = %s, 
+                        paid_at = CURRENT_TIMESTAMP
+                '''
+                params = [status]
+                
+                if order_id:
+                    query += ', order_id = %s'
+                    params.append(order_id)
+                    
+                if payment_method:
+                    query += ', payment_method = %s'
+                    params.append(payment_method)
+                    
+                if transaction_id:
+                    query += ', transaction_id = %s'
+                    params.append(transaction_id)
+                    
+                query += ' WHERE id = %s'
+                params.append(invoice_id)
+                
+                cursor.execute(query, tuple(params))
                 conn.commit()
                 return True
         except Exception as e:

@@ -235,24 +235,37 @@ class RebeccaPanelManager(MarzbanPanelManager):
     def get_services(self) -> List[Dict]:
         """
         Get all services from the panel
-        Tries multiple endpoints to find services/inbounds
+        Tries multiple endpoints to find services, nodes, inbounds, or hosts
+        Works even if no services exist
         """
         try:
             if not self.ensure_logged_in():
+                logger.error("Failed to login to Rebecca panel")
                 return []
             
+            # Try many possible endpoints for Rebecca/Marzban/Marzneshin panels
             endpoints = [
                 '/api/services',
+                '/api/service',
                 '/api/nodes',
+                '/api/node',
                 '/api/inbounds',
-                '/api/core/config',
-                '/api/system'
+                '/api/inbound',
+                '/api/hosts',
+                '/api/host',
+                '/api/users',  # Sometimes services are under users
+                '/api/admin/inbounds',
+                '/api/admin/services',
+                '/api/admin/nodes',
+                '/api/panel/inbounds',
+                '/api/core/inbounds',
             ]
+            
+            all_results = []
             
             for endpoint in endpoints:
                 try:
                     logger.info(f"Trying endpoint: {endpoint}")
-                    print(f"DEBUG: Trying endpoint {endpoint}")
                     
                     response = self.session.get(
                         f"{self.base_url}{endpoint}",
@@ -261,49 +274,73 @@ class RebeccaPanelManager(MarzbanPanelManager):
                     )
                     
                     if response.status_code == 200:
-                        data = response.json()
-                        print(f"DEBUG: Endpoint {endpoint} returned {type(data)}")
+                        try:
+                            data = response.json()
+                        except:
+                            logger.warning(f"Endpoint {endpoint} returned non-JSON")
+                            continue
                         
                         # Case 1: List of items
-                        if isinstance(data, list):
-                            logger.info(f"✅ Found list at {endpoint}")
-                            return data
+                        if isinstance(data, list) and len(data) > 0:
+                            logger.info(f"✅ Found list at {endpoint} with {len(data)} items")
+                            if len(data) > len(all_results):
+                                all_results = data
                             
                         # Case 2: Dict with specific keys
-                        if isinstance(data, dict):
-                            print(f"DEBUG: Dict keys: {list(data.keys())}")
-                            
-                            if 'services' in data:
-                                return data['services']
-                            if 'inbounds' in data:
-                                return data['inbounds']
-                            if 'nodes' in data:
-                                return data['nodes']
-                            if 'hosts' in data:
-                                return data['hosts']
-                                
-                            # If it's a dict but no known key, maybe the values are the list?
-                            # (Unlikely for these APIs but possible)
-                            
-                            logger.warning(f"Unexpected dict keys at {endpoint}: {list(data.keys())}")
-                            # Continue to next endpoint if this one didn't have what we wanted
+                        elif isinstance(data, dict):
+                            for key in ['services', 'nodes', 'inbounds', 'hosts', 'items', 'data', 'list', 'result']:
+                                if key in data and isinstance(data[key], list) and len(data[key]) > 0:
+                                    logger.info(f"✅ Found {key} at {endpoint} with {len(data[key])} items")
+                                    if len(data[key]) > len(all_results):
+                                        all_results = data[key]
+                                    break
+                            else:
+                                # Log the keys for debugging
+                                logger.debug(f"Dict keys at {endpoint}: {list(data.keys())}")
+                    elif response.status_code == 404:
+                        logger.debug(f"Endpoint {endpoint} not found (404)")
                     else:
                         logger.warning(f"Endpoint {endpoint} returned {response.status_code}")
                         
                 except Exception as e:
                     logger.warning(f"Error calling {endpoint}: {e}")
             
-            logger.error("❌ All endpoints failed to return services/inbounds")
+            if all_results:
+                logger.info(f"✅ Total items found: {len(all_results)}")
+                return all_results
+            
+            # If all endpoints return nothing, try to get inbound tags as last resort
+            logger.warning("No services found from any endpoint, trying inbound tags...")
+            inbound_tags = self.get_inbound_tags()
+            if inbound_tags:
+                # Convert inbound tags dict to list
+                result = []
+                for protocol, tags in inbound_tags.items():
+                    for tag in tags:
+                        result.append({
+                            'id': hash(tag) % 100000,  # Generate a pseudo-ID from tag
+                            'name': tag,
+                            'protocol': protocol,
+                            'tag': tag
+                        })
+                if result:
+                    logger.info(f"✅ Created {len(result)} items from inbound tags")
+                    return result
+            
+            logger.info("ℹ️ No services/nodes found on panel")
             return []
                 
         except Exception as e:
             logger.error(f"Error getting services from Rebecca: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             return []
 
     def get_inbounds(self) -> List[Dict]:
         """
         Override get_inbounds to return Services as Inbounds
         This allows the existing system to treat Rebecca Services as Inbounds
+        If no services found, returns a default "All Services" inbound
         """
         try:
             services = self.get_services()
@@ -322,10 +359,31 @@ class RebeccaPanelManager(MarzbanPanelManager):
                     'clientStats': [],
                     'listen': '',
                     'port': 0,
-                    'protocol': 'rebecca', # Custom protocol identifier
+                    'protocol': service.get('protocol', 'rebecca'),
                     'settings': '{}',
                     'streamSettings': '{}',
-                    'tag': service.get('name', f"Service {service.get('id')}"),
+                    'tag': service.get('tag', service.get('name', f"Service {service.get('id')}")),
+                    'sniffing': '{}'
+                })
+            
+            # If no services found, return a default inbound that allows client creation
+            if not inbounds:
+                logger.info("ℹ️ No services found, returning default inbound for Rebecca")
+                inbounds.append({
+                    'id': 0,
+                    'up': 0,
+                    'down': 0,
+                    'total': 0,
+                    'remark': 'All Services (Default)',
+                    'enable': True,
+                    'expiryTime': 0,
+                    'clientStats': [],
+                    'listen': '',
+                    'port': 0,
+                    'protocol': 'rebecca',
+                    'settings': '{}',
+                    'streamSettings': '{}',
+                    'tag': 'All Services',
                     'sniffing': '{}'
                 })
             
@@ -427,38 +485,33 @@ class RebeccaPanelManager(MarzbanPanelManager):
                 "on_hold_expire_duration": None
             }
 
-            # Force Service Selection Logic
-            # 1. Fetch available services/nodes to ensure we have a valid ID
-            available_services = self.get_services()
-            selected_service_id = None
+            # Service Selection Logic
+            # Use the provided inbound_id as the Service ID
+            selected_service_id = inbound_id
             
-            if available_services:
-                # DEBUG: Log the first service structure to understand what we are dealing with
-                logger.info(f"🔍 DEBUG: First service/node structure: {available_services[0]}")
+            if selected_service_id:
+                logger.info(f"🔗 Assigning Service ID {selected_service_id} to client {username}")
                 
-                # Check if the requested inbound_id is valid
-                if inbound_id:
-                    for s in available_services:
-                        if str(s.get('id')) == str(inbound_id):
-                            selected_service_id = inbound_id
-                            logger.info(f"✅ Verified requested service ID {inbound_id} exists")
-                            break
+                # Send as Service ID
+                # Rebecca Services API expects 'service_id' or 'services' list
+                data["service_id"] = selected_service_id
+                # Some versions might expect a list of service IDs
+                data["services"] = [selected_service_id]
                 
-                # If not found or not provided, pick the first one (or random)
-                if not selected_service_id:
-                    if inbound_id:
-                        logger.warning(f"⚠️ Requested service ID {inbound_id} not found in available services. Falling back to default.")
-                    
-                    # Pick the first available service
-                    first_service = available_services[0]
-                    selected_service_id = first_service.get('id')
-                    service_name = first_service.get('name') or first_service.get('tag')
-                    logger.info(f"🔄 Forced selection of service: {service_name} (ID: {selected_service_id})")
+                # Also try casting to int just in case
+                try:
+                    int_id = int(selected_service_id)
+                    data["service_id"] = int_id
+                    data["services"] = [int_id]
+                except:
+                    pass
             else:
-                logger.error("❌ No services/nodes found in Rebecca panel! Cannot assign service.")
+                logger.warning("⚠️ No Service ID provided (inbound_id is 0 or None). Client will be created without specific service assignment.")
             
             # Get actual inbound tags and assign ALL of them to the client
             # This ensures the client can connect to all available servers/services
+            # Note: For Services, this might not be needed if 'services' field handles it, 
+            # but keeping it for compatibility if Rebecca still uses inbounds internally.
             inbounds_dict = self.get_inbound_tags()
             
             if inbounds_dict:
@@ -467,36 +520,6 @@ class RebeccaPanelManager(MarzbanPanelManager):
                 logger.info(f"🔗 Assigning ALL inbounds to client: {inbounds_dict}")
             else:
                 logger.warning("⚠️ Could not fetch inbound tags, Rebecca will use defaults")
-                
-            # 2. Apply the selected service ID to the payload
-            # CRITICAL FIX: Rebecca/Marzban forks distinguish between "Services" and "Nodes".
-            # If we fetched from /api/nodes, we MUST NOT send "service_id", as the backend will try to look up a Service and fail with 404.
-            # We should only send "node_ids" or "nodes".
-            
-            if selected_service_id:
-                # We know available_services came from get_services() which calls /api/nodes (since /api/services failed)
-                # So selected_service_id is a NODE ID.
-                
-                # Do NOT send service_id or services for Nodes
-                # data["service_id"] = selected_service_id
-                # data["services"] = [selected_service_id]
-                
-                # Send as Node ID
-                # Try multiple formats as different forks expect different keys
-                data["node_id"] = selected_service_id
-                data["nodes"] = [selected_service_id]
-                data["node_ids"] = [selected_service_id] 
-                
-                # Also try casting to int just in case
-                try:
-                    int_id = int(selected_service_id)
-                    data["node_ids"] = [int_id]
-                except:
-                    pass
-                    
-                logger.info(f"🔗 Assigning Node ID {selected_service_id} to client {username} (omitting service_id)")
-            else:
-                logger.warning("⚠️ Proceeding without service/node assignment (no nodes found)")
             
             logger.debug(f"📤 Creating client with payload: {data}")
             
