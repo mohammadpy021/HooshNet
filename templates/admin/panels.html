@@ -47,7 +47,11 @@
                 <div style="display: flex; gap: var(--sp-md); align-items: center;">
                     <div class="panel-icon-wrapper">
                         <div
+<<<<<<< HEAD
                             class="panel-icon {% if panel.panel_type == 'marzban' %}icon-marzban{% elif panel.panel_type == 'rebecca' %}icon-rebecca{% else %}icon-3xui{% endif %}">
+=======
+                            class="panel-icon {% if panel.panel_type == 'marzban' %}icon-marzban{% elif panel.panel_type == 'rebecca' %}icon-rebecca{% elif panel.panel_type == 'pasargad' %}icon-pasargad{% else %}icon-3xui{% endif %}">
+>>>>>>> 662d329 (Auto-update: 2025-12-14 13:52:04)
                             <i class="fas fa-server"></i>
                         </div>
                     </div>
@@ -55,7 +59,11 @@
                         <div style="font-weight: 800; font-size: 1.1rem; margin-bottom: 2px;">{{ panel.name }}</div>
                         <div style="display: flex; gap: var(--sp-xs);">
                             <span
+<<<<<<< HEAD
                                 class="badge {% if panel.panel_type == 'marzban' %}badge-info{% elif panel.panel_type == 'rebecca' %}badge-error{% else %}badge-warning{% endif %}">
+=======
+                                class="badge {% if panel.panel_type == 'marzban' %}badge-info{% elif panel.panel_type == 'rebecca' %}badge-error{% elif panel.panel_type == 'pasargad' %}badge-success{% else %}badge-warning{% endif %}">
+>>>>>>> 662d329 (Auto-update: 2025-12-14 13:52:04)
                                 {{ panel.panel_type|upper }}
                             </span>
                             {% if panel.is_active %}
@@ -138,6 +146,10 @@
                         <option value="3x-ui">3x-ui (X-UI)</option>
                         <option value="marzban">Marzban</option>
                         <option value="rebecca">Rebecca</option>
+<<<<<<< HEAD
+=======
+                        <option value="pasargad">Pasargad</option>
+>>>>>>> 662d329 (Auto-update: 2025-12-14 13:52:04)
                     </select>
                 </div>
             </div>
@@ -193,6 +205,18 @@
                     بزنید.</small>
             </div>
 
+<<<<<<< HEAD
+=======
+            <div id="add_pasargad_group_container" class="form-group" style="display: none;">
+                <label class="form-label">گروه اصلی (Main Group)</label>
+                <select id="add_pasargad_group" name="pasargad_group" class="form-control">
+                    <option value="">ابتدا دکمه تست اتصال را بزنید...</option>
+                </select>
+                <small class="text-muted" style="display: block; margin-top: 5px;">کاربران جدید در این گروه ساخته خواهند
+                    شد.</small>
+            </div>
+
+>>>>>>> 662d329 (Auto-update: 2025-12-14 13:52:04)
             <div style="display: flex; gap: var(--sp-md); margin-top: var(--sp-lg);">
                 <button type="button" class="btn btn-secondary" onclick="testAndFetchServices()" style="flex: 1;">
                     <i class="fas fa-sync"></i> تست اتصال
@@ -229,6 +253,10 @@
                         <option value="3x-ui">3x-ui</option>
                         <option value="marzban">Marzban</option>
                         <option value="rebecca">Rebecca</option>
+<<<<<<< HEAD
+=======
+                        <option value="pasargad">Pasargad</option>
+>>>>>>> 662d329 (Auto-update: 2025-12-14 13:52:04)
                     </select>
                 </div>
             </div>
@@ -281,6 +309,16 @@
                 </select>
             </div>
 
+<<<<<<< HEAD
+=======
+            <div id="edit_pasargad_group_container" class="form-group" style="display: none;">
+                <label class="form-label">گروه اصلی (Main Group)</label>
+                <select id="edit_pasargad_group" name="pasargad_group" class="form-control">
+                    <option value="">درحال بارگذاری...</option>
+                </select>
+            </div>
+
+>>>>>>> 662d329 (Auto-update: 2025-12-14 13:52:04)
             <div style="display: flex; gap: var(--sp-md); margin-top: var(--sp-lg);">
                 <button type="button" class="btn btn-secondary" onclick="closeModal('editPanelModal')"
                     style="flex: 1;">لغو</button>
@@ -438,6 +476,13 @@
         background: linear-gradient(135deg, #ec4899, #db2777);
     }
 
+<<<<<<< HEAD
+=======
+    .icon-pasargad {
+        background: linear-gradient(135deg, #10b981, #059669);
+    }
+
+>>>>>>> 662d329 (Auto-update: 2025-12-14 13:52:04)
     .detail-row {
         display: flex;
         justify-content: space-between;
@@ -542,6 +587,17 @@
         const formData = new FormData(form);
         const data = Object.fromEntries(formData.entries());
 
+<<<<<<< HEAD
+=======
+        // Handle Pasargad extra config
+        if (data.panel_type === 'pasargad') {
+            const group = document.getElementById('add_pasargad_group').value;
+            if (group) {
+                data.extra_config = { main_group: group };
+            }
+        }
+
+>>>>>>> 662d329 (Auto-update: 2025-12-14 13:52:04)
         // Convert checkbox to boolean if needed, though FormData usually handles it
         // Add logic to call API
         try {
@@ -571,6 +627,7 @@
     // Re-implementing specific logic for panel types (showing/hiding inbound select)
     document.querySelector('select[name="panel_type"]').addEventListener('change', function (e) {
         const inboundContainer = document.getElementById('add_inbound_container');
+<<<<<<< HEAD
         if (e.target.value === 'rebecca') {
             inboundContainer.style.display = 'block';
         } else {
@@ -578,6 +635,90 @@
         }
     });
 
+=======
+        const pasargadContainer = document.getElementById('add_pasargad_group_container');
+
+        inboundContainer.style.display = 'none';
+        pasargadContainer.style.display = 'none';
+
+        if (e.target.value === 'rebecca') {
+            inboundContainer.style.display = 'block';
+        } else if (e.target.value === 'pasargad') {
+            pasargadContainer.style.display = 'block';
+        }
+    });
+
+    // Test connection and fetch services/groups
+    async function testAndFetchServices() {
+        const form = document.getElementById('addPanelForm');
+        const formData = new FormData(form);
+        const data = Object.fromEntries(formData.entries());
+
+        if (!data.url || !data.username || !data.password) {
+            showToast('لطفاً آدرس، نام کاربری و رمز عبور را وارد کنید', 'error');
+            return;
+        }
+
+        const btn = form.querySelector('button[onclick="testAndFetchServices()"]');
+        const originalText = btn.innerHTML;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+        btn.disabled = true;
+
+        try {
+            // First check connection
+            const response = await apiCall('/api/admin/panels/check-connection', {
+                method: 'POST',
+                body: JSON.stringify(data)
+            });
+
+            showToast(response.message, 'success');
+
+            // Then fetch metadata if needed
+            if (data.panel_type === 'pasargad' || data.panel_type === 'rebecca') {
+                try {
+                    const metaResponse = await apiCall('/api/admin/panels/fetch-metadata', {
+                        method: 'POST',
+                        body: JSON.stringify(data)
+                    });
+
+                    if (metaResponse.success) {
+                        if (data.panel_type === 'pasargad' && metaResponse.groups) {
+                            const select = document.getElementById('add_pasargad_group');
+                            select.innerHTML = '<option value="">انتخاب کنید...</option>';
+                            metaResponse.groups.forEach(group => {
+                                const option = document.createElement('option');
+                                option.value = group;
+                                option.textContent = group;
+                                select.appendChild(option);
+                            });
+                            showToast(`لیست گروه‌ها بروزرسانی شد (${metaResponse.groups.length} مورد)`, 'info');
+                        } else if (data.panel_type === 'rebecca' && metaResponse.inbounds) {
+                            const select = document.getElementById('add_default_inbound_id');
+                            select.innerHTML = '<option value="">انتخاب کنید...</option>';
+                            metaResponse.inbounds.forEach(inbound => {
+                                const option = document.createElement('option');
+                                option.value = inbound.id;
+                                option.textContent = inbound.remark || inbound.tag || `Inbound ${inbound.id}`;
+                                select.appendChild(option);
+                            });
+                            showToast(`لیست سرویس‌ها بروزرسانی شد (${metaResponse.inbounds.length} مورد)`, 'info');
+                        }
+                    }
+                } catch (metaError) {
+                    console.error('Error fetching metadata:', metaError);
+                    showToast('خطا در دریافت اطلاعات تکمیلی پنل', 'warning');
+                }
+            }
+
+        } catch (error) {
+            // Error handled by apiCall
+        } finally {
+            btn.innerHTML = originalText;
+            btn.disabled = false;
+        }
+    }
+
+>>>>>>> 662d329 (Auto-update: 2025-12-14 13:52:04)
     // Edit Panel Logic
     async function editPanel(id) {
         try {
@@ -595,6 +736,51 @@
             form.price_per_gb.value = panel.price_per_gb;
             form.sale_type.value = panel.sale_type;
 
+<<<<<<< HEAD
+=======
+            // Handle extra config for Pasargad
+            const pasargadContainer = document.getElementById('edit_pasargad_group_container');
+            const inboundContainer = document.getElementById('edit_inbound_container');
+
+            pasargadContainer.style.display = 'none';
+            inboundContainer.style.display = 'none';
+
+            if (panel.panel_type === 'pasargad') {
+                pasargadContainer.style.display = 'block';
+                // Populate groups if possible, or show current value
+                const select = document.getElementById('edit_pasargad_group');
+                select.innerHTML = ''; // Clear
+
+                let currentGroup = '';
+                if (panel.extra_config) {
+                    try {
+                        const config = typeof panel.extra_config === 'string' ? JSON.parse(panel.extra_config) : panel.extra_config;
+                        currentGroup = config.main_group || '';
+                    } catch (e) { }
+                }
+
+                if (currentGroup) {
+                    const option = document.createElement('option');
+                    option.value = currentGroup;
+                    option.textContent = currentGroup;
+                    option.selected = true;
+                    select.appendChild(option);
+
+                    // Add option to fetch more
+                    const fetchOption = document.createElement('option');
+                    fetchOption.value = "";
+                    fetchOption.textContent = "--- برای بروزرسانی لیست ذخیره کنید ---";
+                    fetchOption.disabled = true;
+                    select.appendChild(fetchOption);
+                } else {
+                    select.innerHTML = '<option value="">گروهی انتخاب نشده</option>';
+                }
+            } else if (panel.panel_type === 'rebecca') {
+                inboundContainer.style.display = 'block';
+                // Populate inbounds... (existing logic or simplified)
+            }
+
+>>>>>>> 662d329 (Auto-update: 2025-12-14 13:52:04)
             document.getElementById('editPanelModal').style.display = 'flex';
         } catch (error) {
             console.error(error);

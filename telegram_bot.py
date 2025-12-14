@@ -27,7 +27,13 @@ from config import BOT_CONFIG, CLIENT_DEFAULTS, DEFAULT_PANEL_CONFIG, WEBAPP_CON
 from traffic_monitor import TrafficMonitor
 from persian_datetime import PersianDateTime, format_db_datetime, format_db_date
 from user_info_updater import auto_update_user_info, ensure_user_updated
+<<<<<<< HEAD
 from channel_checker import require_channel_membership, check_channel_membership, show_force_join_message
+=======
+from user_info_updater import auto_update_user_info, ensure_user_updated
+from channel_checker import require_channel_membership, check_channel_membership, show_force_join_message
+from system_manager import SystemManager
+>>>>>>> 662d329 (Auto-update: 2025-12-14 13:52:04)
 
 # Configure logging
 logging.basicConfig(
@@ -97,6 +103,11 @@ class VPNBot:
             self.db = ProfessionalDatabaseManager()
         else:
             self.db = db
+<<<<<<< HEAD
+=======
+            
+        self.system_manager = None
+>>>>>>> 662d329 (Auto-update: 2025-12-14 13:52:04)
         
         self.panel_manager = PanelManager()
         self.user_sessions = {}  # Store user session data
@@ -706,6 +717,7 @@ class VPNBot:
 
                 else:
                     # User is not a member yet
+<<<<<<< HEAD
                     error_message = "❌ متأسفانه شما هنوز عضو کانال نشده‌اید.\n\nلطفاً ابتدا در کانال عضو شوید و سپس دوباره روی دکمه «عضو شدم» کلیک کنید."
                     error_keyboard = InlineKeyboardMarkup([[
                             InlineKeyboardButton("📢 عضویت در کانال", url=self.bot_config.get('channel_link', 'https://t.me/YourChannel')),
@@ -725,6 +737,9 @@ class VPNBot:
                         else:
                             # Re-raise other BadRequest errors
                             raise
+=======
+                    await show_force_join_message(update, context, bot_config=self.bot_config)
+>>>>>>> 662d329 (Auto-update: 2025-12-14 13:52:04)
                 return
             elif data == "show_inbounds":
                 await self.show_inbounds(update, context)
@@ -980,6 +995,15 @@ class VPNBot:
                 await self.handle_confirm_product_delete(update, context, product_id)
             elif data == "admin_panel":
                 await self.handle_admin_panel(update, context)
+<<<<<<< HEAD
+=======
+            elif data == "system_settings":
+                await self.handle_system_settings(update, context)
+            elif data == "system_logs":
+                await self.handle_system_action(update, context, "logs")
+            elif data.startswith("sys_"):
+                await self.handle_system_action(update, context, data.split("_")[1])
+>>>>>>> 662d329 (Auto-update: 2025-12-14 13:52:04)
             elif data == "admin_stats":
                 await self.handle_admin_stats(update, context)
             elif data == "stats_users":
@@ -1097,7 +1121,11 @@ class VPNBot:
             elif data == "list_panels":
                 await self.handle_list_panels(update, context)
             elif data == "add_panel":
+<<<<<<< HEAD
                 await self.handle_add_panel_flow(update, context)
+=======
+                await self.start_add_panel(update, context)
+>>>>>>> 662d329 (Auto-update: 2025-12-14 13:52:04)
             elif data.startswith("panel_type_"):
                 panel_type = data.replace("panel_type_", "")
                 await self.handle_panel_type_selection(update, context, panel_type)
@@ -1406,6 +1434,14 @@ class VPNBot:
                 # Handle protocol selection for Marzban panels
                 protocol = data.split("_")[4]  # vless, vmess, or trojan
                 await self.handle_protocol_selection_for_panel(update, context, protocol)
+<<<<<<< HEAD
+=======
+            elif data.startswith("select_group_for_panel_"):
+                # Handle group selection for Pasargad panels
+                # group_id might be string (name) or int
+                group_id = data.split("_", 4)[4]
+                await self.handle_group_selection_for_panel(update, context, group_id)
+>>>>>>> 662d329 (Auto-update: 2025-12-14 13:52:04)
             elif data == "page_info":
                 # Handle page info button - just show a simple alert
                 await query.answer("ℹ️ این دکمه فقط نمایشگر شماره صفحه است", show_alert=False)
@@ -2614,6 +2650,7 @@ class VPNBot:
         context.user_data['adding_panel'] = True
         
         add_text = """
+<<<<<<< HEAD
 ➕ **اضافه کردن پنل جدید**
 
 لطفاً نوع پنل را انتخاب کنید:
@@ -2626,6 +2663,19 @@ class VPNBot:
             [InlineKeyboardButton("❌ لغو", callback_data="manage_panels")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
+=======
+🔧 **اضافه کردن پنل جدید**
+
+لطفاً نوع پنل را انتخاب کنید:
+
+🔵 **3x-ui**: پنل قدرتمند 3x-ui با قابلیت‌های پیشرفته
+🟢 **Marzban**: پنل مدرن Marzban با رابط کاربری ساده
+🟣 **Rebecca**: پنل مدیریت کاربران Rebecca
+🟠 **Pasargad**: پنل مدیریت کاربران Pasargad
+        """
+        
+        reply_markup = ButtonLayout.create_panel_type_selection()
+>>>>>>> 662d329 (Auto-update: 2025-12-14 13:52:04)
         
         await query.edit_message_text(
             add_text,
@@ -3329,8 +3379,61 @@ class VPNBot:
                 
                 panel_type = context.user_data.get('panel_type', '3x-ui')
                 
+<<<<<<< HEAD
                 # For Marzban and Rebecca, ask for protocol instead of inbound
                 if panel_type in ['marzban', 'rebecca']:
+=======
+                # For Pasargad, ask for Group
+                if panel_type == 'pasargad':
+                    panel_url = context.user_data['panel_url']
+                    panel_username = context.user_data['panel_username']
+                    panel_password = context.user_data['panel_password']
+                    
+                    await update.message.reply_text("⏳ در حال دریافت لیست گروه‌ها...")
+                    
+                    try:
+                        from pasargad_manager import PasargadPanelManager
+                        temp_panel = PasargadPanelManager()
+                        temp_panel.base_url = panel_url
+                        temp_panel.username = panel_username
+                        temp_panel.password = panel_password
+                        
+                        if temp_panel.login():
+                            groups = temp_panel.get_groups()
+                            if not groups:
+                                await update.message.reply_text("❌ هیچ گروهی یافت نشد.")
+                                return
+                            
+                            keyboard = []
+                            for group in groups:
+                                keyboard.append([InlineKeyboardButton(
+                                    f"📂 {group['name']} (ID: {group['id']})", 
+                                    callback_data=f"select_group_for_panel_{group['id']}"
+                                )])
+                            
+                            keyboard.append([InlineKeyboardButton("❌ لغو", callback_data="manage_panels")])
+                            reply_markup = InlineKeyboardMarkup(keyboard)
+                            
+                            await update.message.reply_text(
+                                "📂 **لطفاً گروه اصلی (Main Group) را انتخاب کنید:**\n\n"
+                                "کاربران جدید در این گروه ساخته خواهند شد.",
+                                reply_markup=reply_markup,
+                                parse_mode='Markdown'
+                            )
+                        else:
+                            await update.message.reply_text("❌ خطا در اتصال به پنل. لطفاً اطلاعات را بررسی کنید.")
+                            context.user_data.clear()
+                            return
+                            
+                    except Exception as e:
+                        logger.error(f"Error fetching Pasargad groups: {e}")
+                        await update.message.reply_text(f"❌ خطا: {str(e)}")
+                        context.user_data.clear()
+                        return
+
+                # For Marzban and Rebecca, ask for protocol instead of inbound
+                elif panel_type in ['marzban', 'rebecca']:
+>>>>>>> 662d329 (Auto-update: 2025-12-14 13:52:04)
                     text = "🔗 **انتخاب پروتکل برای ساخت کلاینت‌ها:**\n\n"
                     text += "کاربران از تمامی inbound های پروتکل انتخابی استفاده خواهند کرد.\n\n"
                     
@@ -10179,11 +10282,19 @@ class VPNBot:
                 if panel:
                     panel_type = panel.get('panel_type', '3x-ui')
                     
+<<<<<<< HEAD
                     if panel_type in ['marzban', 'rebecca']:
                         # For Marzban and Rebecca, get subscription link from panel API
                         panel_manager = self.admin_manager.get_panel_manager(service['panel_id'])
                         if panel_manager and panel_manager.login():
                             # Get subscription URL from panel (Marzban/Rebecca returns subscription link)
+=======
+                    if panel_type in ['marzban', 'rebecca', 'pasargad']:
+                        # For Marzban, Rebecca, and Pasargad, get subscription link from panel API
+                        panel_manager = self.admin_manager.get_panel_manager(service['panel_id'])
+                        if panel_manager and panel_manager.login():
+                            # Get subscription URL from panel (Marzban/Rebecca/Pasargad returns subscription link)
+>>>>>>> 662d329 (Auto-update: 2025-12-14 13:52:04)
                             subscription_link = panel_manager.get_client_config_link(
                                 service['inbound_id'],
                                 service['client_uuid'],
@@ -10626,8 +10737,13 @@ class VPNBot:
             
             # Get subscription link based on panel type (NOT direct config)
             subscription_link = ""
+<<<<<<< HEAD
             if panel_type in ['marzban', 'rebecca']:
                 # For Marzban and Rebecca, use the subscription_url from reset result
+=======
+            if panel_type in ['marzban', 'rebecca', 'pasargad']:
+                # For Marzban, Rebecca, and Pasargad, use the subscription_url from reset result
+>>>>>>> 662d329 (Auto-update: 2025-12-14 13:52:04)
                 subscription_link = new_client_info.get('subscription_url', '')
                 # Make sure it's a full URL
                 if subscription_link and not subscription_link.startswith('http'):
@@ -13885,7 +14001,18 @@ class VPNBot:
             new_total_gb = current_total_gb + volume_gb
             
             # Update volume in panel
+<<<<<<< HEAD
             result = self.panel_manager.update_client_traffic(
+=======
+            # Get appropriate panel manager
+            pm = self.admin_manager.get_panel_manager(panel_id)
+            if not pm:
+                logger.error(f"Could not get panel manager for panel {panel_id}")
+                await query.edit_message_text("❌ خطا در اتصال به پنل.")
+                return
+
+            result = pm.update_client_traffic(
+>>>>>>> 662d329 (Auto-update: 2025-12-14 13:52:04)
                 service['inbound_id'],
                 service['client_uuid'],
                 new_total_gb
@@ -13948,6 +14075,7 @@ class VPNBot:
                 if discount_amount > 0:
                     discount_message = f"\n🎁 **کد تخفیف:** {applied_discount_code}\n💵 **مبلغ تخفیف:** {discount_amount:,} تومان\n📌 **قیمت اصلی:** {original_amount:,} تومان\n"
                 
+<<<<<<< HEAD
                 # Fetch subscription link for display
                 subscription_link = ""
                 try:
@@ -13964,13 +14092,19 @@ class VPNBot:
                 
                 config_message = f"\n\n🔧 **کانفیگ VPN:**\n`{subscription_link}`" if subscription_link else ""
                 
+=======
+>>>>>>> 662d329 (Auto-update: 2025-12-14 13:52:04)
                 message = f"""
 ✅ **حجم با موفقیت اضافه شد!**
 
 📊 **حجم اضافه شده:** {volume_gb} گیگابایت
 📈 **حجم کل جدید:** {new_total_gb} گیگابایت{discount_message}💰 **مبلغ پرداخت شده:** {final_price:,} تومان
 
+<<<<<<< HEAD
 سرویس شما به‌روزرسانی شد و آماده استفاده است.{config_message}
+=======
+سرویس شما به‌روزرسانی شد و آماده استفاده است.
+>>>>>>> 662d329 (Auto-update: 2025-12-14 13:52:04)
                 """
                 
                 keyboard = [
@@ -15433,6 +15567,168 @@ class VPNBot:
             await query.answer("❌ خطا در رد پرداخت.", show_alert=True)
 
 
+<<<<<<< HEAD
+=======
+    async def handle_group_selection_for_panel(self, update: Update, context: ContextTypes.DEFAULT_TYPE, group_id: str):
+        """Handle group selection for Pasargad panel"""
+        query = update.callback_query
+        await query.answer()
+        
+        try:
+            # Retrieve panel details from user_data
+            panel_name = context.user_data.get('panel_name')
+            panel_url = context.user_data.get('panel_url')
+            panel_username = context.user_data.get('panel_username')
+            panel_password = context.user_data.get('panel_password')
+            panel_sub_url = context.user_data.get('panel_subscription_url')
+            panel_price = context.user_data.get('panel_price')
+            panel_type = context.user_data.get('panel_type')
+            
+            # Save to database
+            extra_config = {'main_group': group_id}
+            
+            panel_id = self.db.add_panel(
+                name=panel_name,
+                url=panel_url,
+                username=panel_username,
+                password=panel_password,
+                api_endpoint=panel_url,
+                subscription_url=panel_sub_url,
+                price_per_gb=panel_price,
+                panel_type=panel_type,
+                extra_config=extra_config
+            )
+            
+            if panel_id:
+                await query.edit_message_text(
+                    f"✅ پنل **{panel_name}** با موفقیت اضافه شد!\n\n"
+                    f"نوع: {panel_type}\n"
+                    f"گروه اصلی: {group_id}",
+                    reply_markup=ButtonLayout.create_back_button("manage_panels"),
+                    parse_mode='Markdown'
+                )
+                context.user_data.clear()
+            else:
+                await query.edit_message_text(
+                    "❌ خطا در ذخیره پنل در دیتابیس.",
+                    reply_markup=ButtonLayout.create_back_button("manage_panels")
+                )
+                
+        except Exception as e:
+            logger.error(f"Error handling group selection: {e}")
+            await query.edit_message_text("❌ خطا در پردازش درخواست.")
+
+
+
+    async def handle_system_settings(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Show system settings menu"""
+        query = update.callback_query
+        await query.answer()
+        
+        user_id = update.effective_user.id
+        if not self.db.is_admin(user_id):
+            await query.edit_message_text("❌ دسترسی غیرمجاز.")
+            return
+            
+        text = """
+⚙️ **تنظیمات سیستم**
+
+لطفاً گزینه مورد نظر را انتخاب کنید:
+
+🔄 **آپدیت سیستم:** دریافت آخرین نسخه ربات و وب اپلیکیشن
+💾 **بکاپ دیتابیس:** تهیه و ارسال فایل پشتیبان دیتابیس
+🧹 **بهینه‌سازی:** بهینه‌سازی جداول و ایندکس‌های دیتابیس
+📊 **وضعیت سیستم:** مشاهده منابع مصرفی سرور
+🔄 **ریستارت:** راه‌اندازی مجدد سرویس‌ها
+        """
+        
+        reply_markup = ButtonLayout.create_system_settings_menu()
+        
+        await query.edit_message_text(
+            text,
+            reply_markup=reply_markup,
+            parse_mode='Markdown'
+        )
+
+    async def handle_system_action(self, update: Update, context: ContextTypes.DEFAULT_TYPE, action: str):
+        """Handle system actions"""
+        query = update.callback_query
+        
+        # Check admin
+        user_id = update.effective_user.id
+        if not self.db.is_admin(user_id):
+            await query.answer("❌ دسترسی غیرمجاز.", show_alert=True)
+            return
+
+        if not self.system_manager:
+            await query.answer("❌ مدیر سیستم فعال نیست.", show_alert=True)
+            return
+
+        # Handle actions
+        if action == "update":
+            await query.answer("⏳ در حال شروع آپدیت...", show_alert=True)
+            success, msg = await self.system_manager.update_system()
+            if success:
+                await query.edit_message_text(msg)
+            else:
+                await query.message.reply_text(msg)
+                
+        elif action == "backup":
+            await query.answer("⏳ در حال تهیه بکاپ...", show_alert=True)
+            await query.edit_message_text("⏳ در حال تهیه و ارسال بکاپ دیتابیس...\nلطفاً صبر کنید.")
+            success, msg = await self.system_manager.backup_database()
+            # Return to menu
+            reply_markup = ButtonLayout.create_back_button("system_settings")
+            await query.edit_message_text(msg, reply_markup=reply_markup)
+            
+        elif action == "optimize":
+            await query.answer("⏳ در حال بهینه‌سازی...", show_alert=True)
+            await query.edit_message_text("⏳ در حال بهینه‌سازی دیتابیس...")
+            success, msg = await self.system_manager.optimize_database()
+            reply_markup = ButtonLayout.create_back_button("system_settings")
+            await query.edit_message_text(msg, reply_markup=reply_markup)
+            
+        elif action == "status":
+            await query.answer("⏳ دریافت وضعیت...", show_alert=True)
+            status_text = await self.system_manager.get_system_status()
+            reply_markup = ButtonLayout.create_back_button("system_settings")
+            await query.edit_message_text(status_text, reply_markup=reply_markup, parse_mode='Markdown')
+            
+        elif action == "restart":
+            await query.answer("⏳ در حال ریستارت...", show_alert=True)
+            success, msg = await self.system_manager.restart_services()
+            await query.edit_message_text(msg)
+            
+        elif action == "logs":
+            await query.answer("⏳ دریافت لاگ‌ها...", show_alert=True)
+            logs = await self.system_manager.get_system_logs(lines=50)
+            
+            # Send as file if too long
+            if len(logs) > 4000:
+                # Create temp file
+                import io
+                log_file = io.BytesIO(logs.encode('utf-8'))
+                log_file.name = "system_logs.txt"
+                await context.bot.send_document(
+                    chat_id=user_id,
+                    document=log_file,
+                    caption="📋 لاگ‌های سیستم (50 خط آخر)"
+                )
+                await query.edit_message_text("✅ فایل لاگ ارسال شد.", reply_markup=ButtonLayout.create_back_button("system_settings"))
+            else:
+                # Format as code block
+                log_text = f"📋 **لاگ‌های سیستم (50 خط آخر):**\n\n```\n{logs}\n```"
+                reply_markup = ButtonLayout.create_back_button("system_settings")
+                try:
+                    await query.edit_message_text(log_text, reply_markup=reply_markup, parse_mode='Markdown')
+                except Exception:
+                    # Fallback if markdown fails (e.g. special chars)
+                    await query.edit_message_text(f"📋 لاگ‌های سیستم:\n\n{logs}", reply_markup=reply_markup)
+
+        else:
+            await query.answer("❌ دستور نامعتبر.", show_alert=True)
+
+>>>>>>> 662d329 (Auto-update: 2025-12-14 13:52:04)
 class NoProxyRequest(HTTPXRequest):
     """Custom request class to disable system proxies"""
     def __init__(self, *args, **kwargs):
@@ -15454,17 +15750,30 @@ def main():
     # CRITICAL: Pass bot_config to ReportingSystem to ensure reports go to correct channel
     bot.reporting_system = ReportingSystem(telegram_bot, bot_config=bot.bot_config)
     bot.statistics_system = StatisticsSystem(bot.db, bot.admin_manager)
+<<<<<<< HEAD
+=======
+    bot.system_manager = SystemManager(telegram_bot, bot.db, bot.bot_config)
+>>>>>>> 662d329 (Auto-update: 2025-12-14 13:52:04)
     
     # Create application
     application = Application.builder().token(BOT_CONFIG['token']).request(request).build()
     
     # Add handlers
+<<<<<<< HEAD
     application.add_handler(CommandHandler("start", bot.start_command))
     application.add_handler(CommandHandler("help", bot.help_command))
     application.add_handler(CommandHandler("myid", bot.myid_command))
     application.add_handler(CallbackQueryHandler(bot.handle_callback_query))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, bot.handle_text_message))
     application.add_handler(MessageHandler(filters.PHOTO, bot.handle_receipt_upload))
+=======
+    application.add_handler(CommandHandler("start", bot.start_command, filters=filters.ChatType.PRIVATE))
+    application.add_handler(CommandHandler("help", bot.help_command, filters=filters.ChatType.PRIVATE))
+    application.add_handler(CommandHandler("myid", bot.myid_command, filters=filters.ChatType.PRIVATE))
+    application.add_handler(CallbackQueryHandler(bot.handle_callback_query))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND & filters.ChatType.PRIVATE, bot.handle_text_message))
+    application.add_handler(MessageHandler(filters.PHOTO & filters.ChatType.PRIVATE, bot.handle_receipt_upload))
+>>>>>>> 662d329 (Auto-update: 2025-12-14 13:52:04)
     
     # Add error handler
     async def error_handler(update, context):
@@ -15530,5 +15839,9 @@ def main():
     
     application.run_polling()
 
+<<<<<<< HEAD
+=======
+
+>>>>>>> 662d329 (Auto-update: 2025-12-14 13:52:04)
 if __name__ == '__main__':
     main()

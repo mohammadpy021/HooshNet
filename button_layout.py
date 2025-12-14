@@ -798,6 +798,38 @@ class ProfessionalButtonLayout:
         return InlineKeyboardMarkup(keyboard)
     
     @staticmethod
+<<<<<<< HEAD
+=======
+    def create_system_settings_menu() -> InlineKeyboardMarkup:
+        """Create professional system settings menu"""
+        keyboard = [
+            # Row 1: Update & Backup
+            [
+                InlineKeyboardButton("🔄 آپدیت سیستم", callback_data="sys_update"),
+                InlineKeyboardButton("💾 بکاپ دیتابیس", callback_data="sys_backup")
+            ],
+            # Row 2: Optimize & Status
+            [
+                InlineKeyboardButton("🧹 بهینه‌سازی دیتابیس", callback_data="sys_optimize"),
+                InlineKeyboardButton("📊 وضعیت سیستم", callback_data="sys_status")
+            ],
+            # Row 3: Logs
+            [
+                InlineKeyboardButton("📋 لاگ‌های سیستم", callback_data="sys_logs")
+            ],
+            # Row 4: Restart (Full width for safety)
+            [
+                InlineKeyboardButton("🔄 ریستارت سرویس‌ها", callback_data="sys_restart")
+            ],
+            # Row 5: Back
+            [
+                InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel")
+            ]
+        ]
+        return InlineKeyboardMarkup(keyboard)
+
+    @staticmethod
+>>>>>>> 662d329 (Auto-update: 2025-12-14 13:52:04)
     def create_volume_suggestions(panel_id: int, price_per_gb: int = 1000) -> InlineKeyboardMarkup:
         """Create volume suggestions with custom option - professional and dynamic layout"""
         
@@ -961,6 +993,25 @@ class ProfessionalButtonLayout:
         )]]
         return InlineKeyboardMarkup(keyboard)
 
+<<<<<<< HEAD
+=======
+    @staticmethod
+    def create_panel_type_selection() -> InlineKeyboardMarkup:
+        """Create panel type selection buttons"""
+        keyboard = [
+            [
+                InlineKeyboardButton("🔵 3x-ui", callback_data="panel_type_3x-ui"),
+                InlineKeyboardButton("🟢 Marzban", callback_data="panel_type_marzban")
+            ],
+            [
+                InlineKeyboardButton("🟣 Rebecca", callback_data="panel_type_rebecca"),
+                InlineKeyboardButton("🟠 Pasargad", callback_data="panel_type_pasargad")
+            ],
+            [InlineKeyboardButton("❌ لغو", callback_data="manage_panels")]
+        ]
+        return InlineKeyboardMarkup(keyboard)
+
+>>>>>>> 662d329 (Auto-update: 2025-12-14 13:52:04)
 
 # Legacy compatibility
 class ButtonLayout(ProfessionalButtonLayout):

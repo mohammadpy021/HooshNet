@@ -5714,7 +5714,12 @@ def api_admin_add_panel():
             panel_type=data.get('panel_type', '3x-ui'),
             subscription_url=data.get('subscription_url'),
             sale_type=data.get('sale_type', 'gigabyte'),
+<<<<<<< HEAD
             default_inbound_id=data.get('default_inbound_id')
+=======
+            default_inbound_id=data.get('default_inbound_id'),
+            extra_config=data.get('extra_config')
+>>>>>>> 662d329 (Auto-update: 2025-12-14 13:52:04)
         )
         
         if success:
@@ -5764,6 +5769,72 @@ def api_admin_check_panel_connection():
         logger.error(f"Error checking panel connection: {e}")
         return secure_error_response(e)
 
+<<<<<<< HEAD
+=======
+@app.route('/api/admin/panels/fetch-metadata', methods=['POST'])
+@admin_required
+def api_admin_fetch_panel_metadata():
+    """Fetch panel metadata (groups, inbounds) with provided credentials"""
+    try:
+        data = request.json
+        if not data:
+            return jsonify({'success': False, 'message': 'داده‌های درخواست نامعتبر است'}), 400
+        
+        url = data.get('url')
+        username = data.get('username')
+        password = data.get('password')
+        panel_type = data.get('panel_type', '3x-ui')
+        api_endpoint = data.get('api_endpoint')
+        
+        if not url or not username or not password:
+            return jsonify({'success': False, 'message': 'لطفاً آدرس، نام کاربری و رمز عبور را وارد کنید'}), 400
+            
+        from admin_manager import AdminManager
+        from pasargad_manager import PasargadPanelManager
+        from panel_manager import PanelManager
+        from marzban_manager import MarzbanPanelManager
+        from rebecca_manager import RebeccaPanelManager
+        
+        # We don't need db for this, just the manager classes
+        
+        manager = None
+        if panel_type == 'marzban':
+            manager = MarzbanPanelManager()
+        elif panel_type == 'rebecca':
+            manager = RebeccaPanelManager()
+        elif panel_type == 'pasargad':
+            manager = PasargadPanelManager()
+        else:
+            manager = PanelManager()
+            
+        manager.base_url = api_endpoint or url
+        manager.username = username
+        manager.password = password
+        
+        if not manager.login():
+            return jsonify({'success': False, 'message': 'عدم موفقیت در ورود به پنل'}), 400
+            
+        result = {'success': True}
+        
+        if panel_type == 'pasargad':
+            if isinstance(manager, PasargadPanelManager):
+                groups = manager.get_groups()
+                result['groups'] = groups
+                result['message'] = f'{len(groups)} گروه یافت شد'
+        elif panel_type == 'rebecca':
+            # For Rebecca, we might want to fetch inbounds/services
+            if hasattr(manager, 'get_inbounds'):
+                inbounds = manager.get_inbounds()
+                result['inbounds'] = inbounds
+                result['message'] = f'{len(inbounds)} سرویس یافت شد'
+        
+        return jsonify(result), 200
+        
+    except Exception as e:
+        logger.error(f"Error fetching panel metadata: {e}")
+        return jsonify({'success': False, 'message': f'خطای سیستمی: {str(e)}'}), 500
+
+>>>>>>> 662d329 (Auto-update: 2025-12-14 13:52:04)
 @app.route('/api/admin/panels/<int:panel_id>', methods=['PUT'])
 @admin_required
 def api_admin_update_panel(panel_id):
@@ -5789,7 +5860,12 @@ def api_admin_update_panel(panel_id):
             subscription_url=clean_value(data.get('subscription_url')),
             panel_type=data.get('panel_type'),
             sale_type=data.get('sale_type'),
+<<<<<<< HEAD
             default_inbound_id=data.get('default_inbound_id')
+=======
+            default_inbound_id=data.get('default_inbound_id'),
+            extra_config=data.get('extra_config')
+>>>>>>> 662d329 (Auto-update: 2025-12-14 13:52:04)
         )
         
         if success:

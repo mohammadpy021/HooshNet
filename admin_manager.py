@@ -10,6 +10,10 @@ from professional_database import ProfessionalDatabaseManager
 from panel_manager import PanelManager
 from marzban_manager import MarzbanPanelManager
 from rebecca_manager import RebeccaPanelManager
+<<<<<<< HEAD
+=======
+from pasargad_manager import PasargadPanelManager
+>>>>>>> 662d329 (Auto-update: 2025-12-14 13:52:04)
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +21,11 @@ class AdminManager:
     def __init__(self, db: ProfessionalDatabaseManager):
         self.db = db
         
+<<<<<<< HEAD
     def get_panel_manager(self, panel_id: int) -> Optional[Union[PanelManager, MarzbanPanelManager, RebeccaPanelManager]]:
+=======
+    def get_panel_manager(self, panel_id: int) -> Optional[Union[PanelManager, MarzbanPanelManager, RebeccaPanelManager, PasargadPanelManager]]:
+>>>>>>> 662d329 (Auto-update: 2025-12-14 13:52:04)
         """
         Factory method to get the appropriate panel manager based on panel type
         """
@@ -36,6 +44,11 @@ class AdminManager:
                 manager = MarzbanPanelManager()
             elif panel_type == 'rebecca':
                 manager = RebeccaPanelManager()
+<<<<<<< HEAD
+=======
+            elif panel_type == 'pasargad':
+                manager = PasargadPanelManager()
+>>>>>>> 662d329 (Auto-update: 2025-12-14 13:52:04)
             else:
                 # Default to 3x-ui
                 manager = PanelManager()
@@ -48,6 +61,18 @@ class AdminManager:
             # For Rebecca/Marzban, we might need subscription_url if available
             if hasattr(manager, 'subscription_url'):
                 manager.subscription_url = panel.get('subscription_url')
+<<<<<<< HEAD
+=======
+            
+            # For Pasargad, set main group if available
+            if isinstance(manager, PasargadPanelManager) and panel.get('extra_config'):
+                try:
+                    extra_config = json.loads(panel.get('extra_config')) if isinstance(panel.get('extra_config'), str) else panel.get('extra_config')
+                    if extra_config and 'main_group' in extra_config:
+                        manager.main_group = extra_config['main_group']
+                except:
+                    pass
+>>>>>>> 662d329 (Auto-update: 2025-12-14 13:52:04)
                 
             return manager
             
@@ -421,3 +446,116 @@ class AdminManager:
             logger.error(f"Error changing main inbound: {e}")
             return False, f"Error: {str(e)}"
 
+<<<<<<< HEAD
+=======
+
+    def add_panel(self, name: str, url: str, username: str, password: str, 
+                  api_endpoint: str, default_inbound_id: int = None, price_per_gb: int = 0,
+                  subscription_url: str = None, panel_type: str = '3x-ui', default_protocol: str = 'vless',
+                  sale_type: str = 'gigabyte', extra_config: dict = None) -> Tuple[bool, str]:
+        """Add a new panel"""
+        try:
+            # Test connection first
+            manager = None
+            if panel_type == 'marzban':
+                manager = MarzbanPanelManager()
+            elif panel_type == 'rebecca':
+                manager = RebeccaPanelManager()
+            elif panel_type == 'pasargad':
+                manager = PasargadPanelManager()
+            else:
+                manager = PanelManager()
+                
+            manager.base_url = api_endpoint or url
+            manager.username = username
+            manager.password = password
+            
+            if not manager.login():
+                return False, "❌ خطا در اتصال به پنل (نام کاربری/رمز عبور یا آدرس اشتباه است)"
+                
+            # Add to database
+            panel_id = self.db.add_panel(
+                name=name,
+                url=url,
+                username=username,
+                password=password,
+                api_endpoint=api_endpoint,
+                default_inbound_id=default_inbound_id,
+                price_per_gb=price_per_gb,
+                subscription_url=subscription_url,
+                panel_type=panel_type,
+                default_protocol=default_protocol,
+                sale_type=sale_type,
+                extra_config=extra_config
+            )
+            
+            if panel_id:
+                # Sync inbounds
+                self.sync_panel_inbounds_to_db(panel_id)
+                return True, "✅ پنل با موفقیت اضافه شد"
+            else:
+                return False, "❌ خطا در ذخیره پنل در دیتابیس"
+                
+        except Exception as e:
+            logger.error(f"Error adding panel: {e}")
+            return False, f"❌ خطای سیستمی: {str(e)}"
+
+    def update_panel(self, panel_id: int, name: str = None, url: str = None,
+                     username: str = None, password: str = None, 
+                     api_endpoint: str = None, price_per_gb: int = None,
+                     subscription_url: str = None, panel_type: str = None, default_protocol: str = None,
+                     sale_type: str = None, default_inbound_id: int = None, extra_config: dict = None) -> Tuple[bool, str]:
+        """Update panel information"""
+        try:
+            # If credentials changing, test connection
+            if url or username or password:
+                # Get current details to merge
+                current_panel = self.db.get_panel(panel_id)
+                if not current_panel:
+                    return False, "Panel not found"
+                    
+                test_url = api_endpoint or url or current_panel.get('api_endpoint') or current_panel.get('url')
+                test_username = username or current_panel.get('username')
+                test_password = password or current_panel.get('password')
+                test_type = panel_type or current_panel.get('panel_type', '3x-ui')
+                
+                manager = None
+                if test_type == 'marzban':
+                    manager = MarzbanPanelManager()
+                elif test_type == 'rebecca':
+                    manager = RebeccaPanelManager()
+                elif test_type == 'pasargad':
+                    manager = PasargadPanelManager()
+                else:
+                    manager = PanelManager()
+                    
+                manager.base_url = test_url
+                manager.username = test_username
+                manager.password = test_password
+                
+                if not manager.login():
+                    return False, "❌ خطا در اتصال به پنل با مشخصات جدید"
+
+            if self.db.update_panel(
+                panel_id=panel_id,
+                name=name,
+                url=url,
+                username=username,
+                password=password,
+                api_endpoint=api_endpoint,
+                price_per_gb=price_per_gb,
+                subscription_url=subscription_url,
+                panel_type=panel_type,
+                default_protocol=default_protocol,
+                sale_type=sale_type,
+                default_inbound_id=default_inbound_id,
+                extra_config=extra_config
+            ):
+                return True, "✅ پنل با موفقیت ویرایش شد"
+            else:
+                return False, "❌ خطا در ویرایش پنل"
+                
+        except Exception as e:
+            logger.error(f"Error updating panel: {e}")
+            return False, f"❌ خطای سیستمی: {str(e)}"
+>>>>>>> 662d329 (Auto-update: 2025-12-14 13:52:04)
