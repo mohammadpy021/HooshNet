@@ -197,7 +197,7 @@ class RebeccaPanelManager(MarzbanPanelManager):
                     else:
                         logger.error(f"❌ No access token in response (form): {token_data}")
                 else:
-                    logger.error(f"❌ Rebecca form login failed: {response.text}")
+                    logger.error(f"❌ Rebecca form login failed: {response.text[:200]}...")
             except Exception as e:
                 logger.warning(f"⚠️ Rebecca form login failed: {e}")
 
@@ -222,7 +222,7 @@ class RebeccaPanelManager(MarzbanPanelManager):
                     else:
                         logger.error(f"❌ No access token in response (JSON): {token_data}")
                 else:
-                    logger.error(f"❌ Rebecca JSON login failed: {response.text}")
+                    logger.error(f"❌ Rebecca JSON login failed: {response.text[:200]}...")
             except Exception as e:
                 logger.error(f"❌ Rebecca JSON login failed: {e}")
                 
@@ -442,9 +442,23 @@ class RebeccaPanelManager(MarzbanPanelManager):
             if total_gb > 0:
                 data_limit = total_gb * 1024 * 1024 * 1024
             
+            # Get actual inbound tags first to know available protocols
+            inbounds_dict = self.get_inbound_tags()
+            available_protocols = list(inbounds_dict.keys()) if inbounds_dict else []
+            
+            if inbounds_dict:
+                logger.info(f"ℹ️ Available protocols on panel: {available_protocols}")
+            else:
+                logger.warning("⚠️ Could not fetch inbound tags, Rebecca will use defaults")
+
             # Prepare proxies based on requested protocol
             # Only include the requested protocol to avoid "protocol disabled" errors
             protocol = protocol.lower() if protocol else "vless"
+            
+            # Auto-switch protocol if requested one is not available but others are
+            if available_protocols and protocol not in available_protocols:
+                logger.warning(f"⚠️ Requested protocol '{protocol}' not available. Switching to '{available_protocols[0]}'")
+                protocol = available_protocols[0]
             
             proxies = {}
             if protocol == "vless":
@@ -508,18 +522,10 @@ class RebeccaPanelManager(MarzbanPanelManager):
             else:
                 logger.warning("⚠️ No Service ID provided (inbound_id is 0 or None). Client will be created without specific service assignment.")
             
-            # Get actual inbound tags and assign ALL of them to the client
-            # This ensures the client can connect to all available servers/services
-            # Note: For Services, this might not be needed if 'services' field handles it, 
-            # but keeping it for compatibility if Rebecca still uses inbounds internally.
-            inbounds_dict = self.get_inbound_tags()
-            
             if inbounds_dict:
                 # Assign ALL inbounds so user can connect to all servers
                 data["inbounds"] = inbounds_dict
                 logger.info(f"🔗 Assigning ALL inbounds to client: {inbounds_dict}")
-            else:
-                logger.warning("⚠️ Could not fetch inbound tags, Rebecca will use defaults")
             
             logger.debug(f"📤 Creating client with payload: {data}")
             
@@ -632,12 +638,188 @@ class RebeccaPanelManager(MarzbanPanelManager):
                     'raw_data': user_data
                 }
             else:
-                logger.error(f"❌ Failed to create client in Rebecca (Status {response.status_code}): {response.text}")
+                logger.error(f"❌ Failed to create client in Rebecca (Status {response.status_code}): {response.text[:200]}...")
                 return None
                 
         except Exception as e:
             logger.error(f"❌ Error creating client in Rebecca: {e}")
             return None
+
+    def update_client(self, inbound_id: int, client_uuid: str, 
+                      total_gb: int = None, expiry_time: int = None, 
+                      client_name: str = None) -> bool:
+        """
+        Update client on Rebecca panel
+        
+        Args:
+            inbound_id: Not used for Rebecca (kept for compatibility)
+            client_uuid: Client UUID or username
+            total_gb: New total GB limit in bytes (optional)
+            expiry_time: New expiry timestamp in milliseconds (optional)
+            client_name: Username (preferred for Rebecca)
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            if not self.ensure_logged_in():
+                return False
+            
+            # Rebecca uses username for API calls
+            username = client_name if client_name else client_uuid
+            
+            # Get current user data
+            response = self.session.get(
+                f"{self.base_url}/api/user/{username}",
+                verify=False,
+                timeout=30
+            )
+            
+            # If lookup failed and we used UUID, try to find username by searching
+            if response.status_code == 404 and client_uuid:
+                logger.info(f"🔍 Direct lookup failed for '{username}', searching by UUID...")
+                
+                # Get all users and search for matching UUID
+                users_response = self.session.get(
+                    f"{self.base_url}/api/users",
+                    verify=False,
+                    timeout=30
+                )
+                
+                if users_response.status_code == 200:
+                    users_data = users_response.json()
+                    users_list = users_data.get('users', []) if isinstance(users_data, dict) else users_data
+                    
+                    # Search for user with EXACT matching UUID in sub_id, key, or proxies.id
+                    clean_uuid = client_uuid.replace('-', '').lower()
+                    found_user = None
+                    
+                    for user in users_list:
+                        user_sub = str(user.get('sub_id', '')).replace('-', '').lower()
+                        user_key = str(user.get('key', '')).replace('-', '').lower()
+                        user_username = user.get('username', '')
+                        
+                        # Check sub_id and key first
+                        if clean_uuid == user_sub or clean_uuid == user_key:
+                            logger.info(f"✅ Found EXACT matching user by sub_id/key: {user_username}")
+                            found_user = user_username
+                            break
+                        
+                        # Check in proxies (this is where UUIDs are stored in Rebecca)
+                        proxies = user.get('proxies', {})
+                        for protocol, settings in proxies.items():
+                            if isinstance(settings, dict):
+                                proxy_id = str(settings.get('id', '')).replace('-', '').lower()
+                                if clean_uuid == proxy_id:
+                                    logger.info(f"✅ Found EXACT matching user by proxy.id: {user_username}")
+                                    found_user = user_username
+                                    break
+                        if found_user:
+                            break
+                    
+                    if found_user:
+                        username = found_user
+                        # Retry the lookup with correct username
+                        response = self.session.get(
+                            f"{self.base_url}/api/user/{username}",
+                            verify=False,
+                            timeout=30
+                        )
+                    else:
+                        logger.warning(f"⚠️ No exact match found for UUID: {clean_uuid}")
+            
+            if response.status_code != 200:
+                logger.error(f"❌ Failed to get user for update: {response.status_code}")
+                return False
+                
+            current_user = response.json()
+            
+            # Prepare update data - only include what Rebecca expects
+            update_data = {
+                "username": current_user.get('username'),
+                "proxies": current_user.get('proxies', {}),
+                "inbounds": current_user.get('inbounds', {}),
+                "status": current_user.get('status', 'active'),
+                "data_limit_reset_strategy": current_user.get('data_limit_reset_strategy', 'no_reset'),
+            }
+            
+            # Update data_limit if provided
+            if total_gb is not None:
+                # total_gb is passed in bytes from the API
+                update_data["data_limit"] = total_gb
+                logger.info(f"📊 Updating data_limit to {total_gb} bytes")
+            else:
+                update_data["data_limit"] = current_user.get('data_limit', 0)
+            
+            # Update expire if provided
+            if expiry_time is not None:
+                # Convert milliseconds to seconds for Rebecca
+                expire_seconds = expiry_time // 1000 if expiry_time > 1000000000000 else expiry_time
+                update_data["expire"] = expire_seconds
+                logger.info(f"📅 Updating expire to {expire_seconds}")
+            else:
+                update_data["expire"] = current_user.get('expire')
+            
+            # Send update request
+            response = self.session.put(
+                f"{self.base_url}/api/user/{username}",
+                json=update_data,
+                verify=False,
+                timeout=30
+            )
+            
+            if response.status_code in (200, 201):
+                logger.info(f"✅ Successfully updated Rebecca user: {username}")
+                # Invalidate cache
+                self._users_cache = None
+                self._cache_timestamp = 0
+                return True
+            else:
+                logger.error(f"❌ Failed to update Rebecca user: {response.status_code} - {response.text[:200]}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"❌ Error updating Rebecca user: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return False
+
+    def update_client_traffic(self, inbound_id: int, client_uuid: str, new_total_gb: int, 
+                              client_name: str = None) -> bool:
+        """
+        Update client traffic (for renewal) in Rebecca - wrapper for update_client
+        
+        Args:
+            inbound_id: Not used in Rebecca
+            client_uuid: Username or UUID
+            new_total_gb: New total limit in bytes or GB (auto-detected)
+            client_name: Username (preferred for Rebecca)
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            # Convert GB to bytes if needed (detect if it's already bytes or GB)
+            # If value is greater than 100, it's probably bytes already
+            if new_total_gb < 100:
+                new_total_bytes = new_total_gb * 1024 * 1024 * 1024
+            else:
+                new_total_bytes = new_total_gb
+            
+            # Use actual username if available
+            username = client_name if client_name else client_uuid
+            
+            logger.info(f"🔄 Rebecca update_client_traffic: {username} -> {new_total_bytes} bytes")
+            
+            return self.update_client(
+                inbound_id,
+                client_uuid,
+                total_gb=new_total_bytes,
+                client_name=username
+            )
+        except Exception as e:
+            logger.error(f"❌ Error in Rebecca update_client_traffic: {e}")
+            return False
 
     def get_client_details(self, inbound_id: int, client_uuid: str,
                            update_inbound_callback=None, service_id=None, client_name=None) -> Optional[Dict]:

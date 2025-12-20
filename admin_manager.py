@@ -11,6 +11,7 @@ from panel_manager import PanelManager
 from marzban_manager import MarzbanPanelManager
 from rebecca_manager import RebeccaPanelManager
 from pasargad_manager import PasargadPanelManager
+from marzneshin_manager import MarzneshinPanelManager
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +19,7 @@ class AdminManager:
     def __init__(self, db: ProfessionalDatabaseManager):
         self.db = db
         
-    def get_panel_manager(self, panel_id: int) -> Optional[Union[PanelManager, MarzbanPanelManager, RebeccaPanelManager, PasargadPanelManager]]:
+    def get_panel_manager(self, panel_id: int) -> Optional[Union[PanelManager, MarzbanPanelManager, RebeccaPanelManager, PasargadPanelManager, MarzneshinPanelManager]]:
         """
         Factory method to get the appropriate panel manager based on panel type
         """
@@ -39,6 +40,8 @@ class AdminManager:
                 manager = RebeccaPanelManager()
             elif panel_type == 'pasargad':
                 manager = PasargadPanelManager()
+            elif panel_type == 'marzneshin':
+                manager = MarzneshinPanelManager()
             else:
                 # Default to 3x-ui
                 manager = PanelManager()
@@ -177,8 +180,8 @@ class AdminManager:
                 return False, "Login failed", None
             
             # Determine panel type and handle accordingly
-            if isinstance(manager, (MarzbanPanelManager, RebeccaPanelManager)):
-                # For Rebecca/Marzban, we should use the Main Service (default_inbound_id)
+            if isinstance(manager, (MarzbanPanelManager, RebeccaPanelManager, MarzneshinPanelManager)):
+                # For Rebecca/Marzban/Marzneshin, we should use the Main Service (default_inbound_id)
                 # Fetch panel details to get default_inbound_id
                 panel = self.db.get_panel(panel_id)
                 main_service_id = panel.get('default_inbound_id') if panel else 0
@@ -448,6 +451,8 @@ class AdminManager:
                 manager = RebeccaPanelManager()
             elif panel_type == 'pasargad':
                 manager = PasargadPanelManager()
+            elif panel_type == 'marzneshin':
+                manager = MarzneshinPanelManager()
             else:
                 manager = PanelManager()
                 
@@ -511,6 +516,8 @@ class AdminManager:
                     manager = RebeccaPanelManager()
                 elif test_type == 'pasargad':
                     manager = PasargadPanelManager()
+                elif test_type == 'marzneshin':
+                    manager = MarzneshinPanelManager()
                 else:
                     manager = PanelManager()
                     
@@ -543,3 +550,68 @@ class AdminManager:
         except Exception as e:
             logger.error(f"Error updating panel: {e}")
             return False, f"❌ خطای سیستمی: {str(e)}"
+
+    def delete_panel(self, panel_id: int) -> Tuple[bool, str]:
+        """Delete a panel from the database"""
+        try:
+            # Verify panel exists
+            panel = self.db.get_panel(panel_id)
+            if not panel:
+                return False, "❌ پنل یافت نشد"
+            
+            # Delete the panel (cascade will handle related data)
+            if self.db.delete_panel(panel_id):
+                logger.info(f"Panel {panel_id} deleted successfully")
+                return True, "✅ پنل با موفقیت حذف شد"
+            else:
+                return False, "❌ خطا در حذف پنل"
+                
+        except Exception as e:
+            logger.error(f"Error deleting panel: {e}")
+            return False, f"❌ خطای سیستمی: {str(e)}"
+
+    def test_panel_connection_with_credentials(self, url: str, username: str, password: str, 
+                                               panel_type: str = '3x-ui') -> Tuple[bool, str, List[Dict]]:
+        """
+        Test connection to a panel using provided credentials (before adding to database).
+        Returns: (success, message, list of inbounds)
+        """
+        try:
+            # Create appropriate manager based on panel type
+            manager = None
+            if panel_type == 'marzban':
+                manager = MarzbanPanelManager()
+            elif panel_type == 'rebecca':
+                manager = RebeccaPanelManager()
+            elif panel_type == 'pasargad':
+                manager = PasargadPanelManager()
+            elif panel_type == 'marzneshin':
+                manager = MarzneshinPanelManager()
+            else:
+                # Default to 3x-ui
+                manager = PanelManager()
+            
+            # Configure manager with provided credentials
+            manager.base_url = url
+            manager.username = username
+            manager.password = password
+            
+            # Try to login
+            if not manager.login():
+                return False, "❌ خطا در اتصال به پنل (نام کاربری/رمز عبور یا آدرس اشتباه است)", []
+            
+            # Try to get inbounds/users
+            inbounds = []
+            try:
+                inbounds = manager.get_inbounds()
+            except Exception as e:
+                logger.warning(f"Could not fetch inbounds: {e}")
+                # Some panels might not have inbounds, that's ok
+                pass
+            
+            return True, "✅ اتصال با موفقیت برقرار شد", inbounds
+                
+        except Exception as e:
+            logger.error(f"Error testing panel connection with credentials: {e}")
+            return False, f"❌ خطای سیستمی: {str(e)}", []
+

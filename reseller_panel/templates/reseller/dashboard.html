@@ -1,0 +1,183 @@
+{% extends "reseller/layout.html" %}
+
+{% block title %}داشبورد{% endblock %}
+{% block page_title %}داشبورد مدیریت{% endblock %}
+
+{% block content %}
+<!-- Stats Grid -->
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="stat-icon" style="color: #3b82f6;">
+            <i class="fa-solid fa-users"></i>
+        </div>
+        <div class="stat-info">
+            <h3>{{ stats.total_resellers }}</h3>
+            <p>کل نمایندگان</p>
+        </div>
+    </div>
+
+    <div class="stat-card">
+        <div class="stat-icon" style="color: var(--color-success);">
+            <i class="fa-solid fa-sack-dollar"></i>
+        </div>
+        <div class="stat-info">
+            <h3>{{ format_currency(stats.total_earnings) }}</h3>
+            <p>درآمد کل</p>
+        </div>
+    </div>
+
+    <div class="stat-card">
+        <div class="stat-icon" style="color: var(--color-warning);">
+            <i class="fa-solid fa-money-bill-transfer"></i>
+        </div>
+        <div class="stat-info">
+            <h3>{{ stats.pending_payouts }}</h3>
+            <p>درخواست تسویه</p>
+        </div>
+    </div>
+
+    <div class="stat-card">
+        <div class="stat-icon" style="color: var(--color-primary);">
+            <i class="fa-solid fa-chart-line"></i>
+        </div>
+        <div class="stat-info">
+            <h3>{{ format_currency(stats.total_sales_volume) }}</h3>
+            <p>حجم فروش</p>
+        </div>
+    </div>
+</div>
+
+<!-- Charts Section -->
+<div class="charts-section">
+    <div class="card">
+        <div class="card-header">
+            <h2 class="card-title">نمودار فروش</h2>
+            <button class="btn btn-sm btn-outline">
+                <i class="fa-solid fa-calendar"></i> 30 روز
+            </button>
+        </div>
+        <div class="chart-container">
+            <canvas id="salesChart"></canvas>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header">
+            <h2 class="card-title">نمایندگان برتر</h2>
+        </div>
+        <div class="resellers-list">
+            {% for reseller in recent_resellers %}
+            <div class="reseller-card" style="margin-bottom: 0.5rem; padding: 0.75rem;">
+                <div class="reseller-avatar" style="width: 40px; height: 40px; font-size: 0.9rem;">
+                    {{ reseller.first_name[0] if reseller.first_name else 'U' }}
+                </div>
+                <div class="reseller-info">
+                    <div class="reseller-name" style="font-size: 0.9rem;">
+                        {{ reseller.first_name }} {{ reseller.last_name }}
+                    </div>
+                    <div class="reseller-meta">
+                        <span class="text-success">{{ format_currency(reseller.total_earnings) }} تومان</span>
+                    </div>
+                </div>
+                {% if reseller.level == 'gold' %}
+                <span class="badge badge-gold"><i class="fa-solid fa-crown"></i></span>
+                {% elif reseller.level == 'silver' %}
+                <span class="badge badge-silver"><i class="fa-solid fa-medal"></i></span>
+                {% else %}
+                <span class="badge badge-primary">S</span>
+                {% endif %}
+            </div>
+            {% else %}
+            <div class="empty-state" style="padding: 1.5rem;">
+                <i class="fa-solid fa-user-slash" style="font-size: 1.5rem;"></i>
+                <p style="margin-bottom: 0;">هنوز نماینده‌ای وجود ندارد</p>
+            </div>
+            {% endfor %}
+        </div>
+        <a href="{{ url_for('reseller.resellers_list') }}" class="btn btn-outline btn-block mt-2">
+            <i class="fa-solid fa-arrow-left"></i>
+            مشاهده همه
+        </a>
+    </div>
+</div>
+
+<!-- Quick Actions -->
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">دسترسی سریع</h2>
+    </div>
+    <div class="form-row">
+        <a href="{{ url_for('reseller.resellers_list') }}" class="btn btn-primary btn-block">
+            <i class="fa-solid fa-user-plus"></i>
+            افزودن نماینده
+        </a>
+        <a href="{{ url_for('reseller.settings') }}" class="btn btn-outline btn-block">
+            <i class="fa-solid fa-gear"></i>
+            تنظیمات
+        </a>
+    </div>
+</div>
+
+<script>
+    // Chart.js - Sales Chart
+    document.addEventListener('DOMContentLoaded', function () {
+        const ctx = document.getElementById('salesChart');
+        if (!ctx) return;
+
+        // Fetch chart data
+        fetch('{{ url_for("reseller.api_chart_data") }}')
+            .then(res => res.json())
+            .then(data => {
+                new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: data.dates.length > 0 ? data.dates : ['هنوز داده‌ای وجود ندارد'],
+                        datasets: [{
+                            label: 'درآمد',
+                            data: data.earnings.length > 0 ? data.earnings : [0],
+                            borderColor: '#E50914',
+                            backgroundColor: 'rgba(229, 9, 20, 0.1)',
+                            fill: true,
+                            tension: 0.4,
+                            pointRadius: 0,
+                            pointHoverRadius: 6
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                display: false
+                            }
+                        },
+                        scales: {
+                            x: {
+                                grid: {
+                                    color: 'rgba(255, 255, 255, 0.05)'
+                                },
+                                ticks: {
+                                    color: '#808080',
+                                    font: {
+                                        family: 'Vazirmatn'
+                                    }
+                                }
+                            },
+                            y: {
+                                grid: {
+                                    color: 'rgba(255, 255, 255, 0.05)'
+                                },
+                                ticks: {
+                                    color: '#808080',
+                                    callback: function (value) {
+                                        return value.toLocaleString('fa-IR');
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+            });
+    });
+</script>
+{% endblock %}

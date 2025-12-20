@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport"
+        content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>{% block title %}پنل نمایندگان{% endblock %} | VPN Pro</title>
+
+    <!-- Telegram Web App -->
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+
+    <!-- PWA -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#000000">
+    <link rel="manifest" href="{{ url_for('reseller.static', filename='manifest.json') }}">
+
+    <!-- Assets -->
+    <link href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="{{ url_for('reseller.static', filename='css/style.css') }}">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+
+<body>
+    <div class="app-layout">
+        <!-- Desktop Sidebar -->
+        <aside class="sidebar">
+            <div class="brand">
+                <i class="fa-solid fa-shield-halved"></i>
+                <span>VPN Pro</span>
+            </div>
+            <nav class="nav-list">
+                <a href="{{ url_for('reseller.dashboard') }}"
+                    class="nav-item {% if request.endpoint == 'reseller.dashboard' %}active{% endif %}">
+                    <i class="fa-solid fa-chart-pie"></i>
+                    <span>داشبورد</span>
+                </a>
+                <a href="{{ url_for('reseller.resellers_list') }}"
+                    class="nav-item {% if request.endpoint == 'reseller.resellers_list' %}active{% endif %}">
+                    <i class="fa-solid fa-users"></i>
+                    <span>نمایندگان</span>
+                </a>
+                <a href="{{ url_for('reseller.settings') }}"
+                    class="nav-item {% if request.endpoint == 'reseller.settings' %}active{% endif %}">
+                    <i class="fa-solid fa-gear"></i>
+                    <span>تنظیمات</span>
+                </a>
+                <a href="{{ url_for('admin_dashboard') }}" class="nav-item"
+                    style="margin-top: auto; color: var(--color-danger);">
+                    <i class="fa-solid fa-arrow-right-from-bracket"></i>
+                    <span>خروج</span>
+                </a>
+            </nav>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Top Header -->
+            <header class="top-bar">
+                <div class="page-title">{% block page_title %}داشبورد{% endblock %}</div>
+                <div class="user-profile">
+                    <span class="desktop-only" style="font-size: 0.9rem; color: var(--color-text-muted);">ادمین
+                        سیستم</span>
+                    <div class="avatar">
+                        <i class="fa-solid fa-user"></i>
+                    </div>
+                </div>
+            </header>
+
+            <!-- Flash Messages -->
+            {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+            <div class="flash-container">
+                {% for category, message in messages %}
+                <div class="flash-message flash-{{ category }}">
+                    <i
+                        class="fa-solid {% if category == 'success' %}fa-check-circle{% elif category == 'error' %}fa-times-circle{% else %}fa-info-circle{% endif %}"></i>
+                    <span>{{ message }}</span>
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+            {% endwith %}
+
+            <!-- Page Content -->
+            <div class="page-content">
+                {% block content %}{% endblock %}
+            </div>
+        </main>
+
+        <!-- Mobile Bottom Nav -->
+        <nav class="bottom-nav">
+            <a href="{{ url_for('reseller.dashboard') }}"
+                class="bottom-nav-item {% if request.endpoint == 'reseller.dashboard' %}active{% endif %}">
+                <i class="fa-solid fa-chart-pie"></i>
+                <span>داشبورد</span>
+            </a>
+            <a href="{{ url_for('reseller.resellers_list') }}"
+                class="bottom-nav-item {% if request.endpoint == 'reseller.resellers_list' %}active{% endif %}">
+                <i class="fa-solid fa-users"></i>
+                <span>نمایندگان</span>
+            </a>
+            <a href="{{ url_for('reseller.settings') }}"
+                class="bottom-nav-item {% if request.endpoint == 'reseller.settings' %}active{% endif %}">
+                <i class="fa-solid fa-gear"></i>
+                <span>تنظیمات</span>
+            </a>
+            <a href="{{ url_for('admin_dashboard') }}" class="bottom-nav-item">
+                <i class="fa-solid fa-home"></i>
+                <span>پنل ادمین</span>
+            </a>
+        </nav>
+    </div>
+
+    <script src="{{ url_for('reseller.static', filename='js/app.js') }}"></script>
+
+    <script>
+        // Telegram Web App Initialization
+        if (window.Telegram && window.Telegram.WebApp) {
+            const tg = window.Telegram.WebApp;
+            tg.expand();
+            try {
+                tg.requestFullscreen();
+            } catch (e) {
+                console.log('Fullscreen not supported or failed:', e);
+            }
+            tg.enableClosingConfirmation();
+
+            // Set colors
+            tg.setHeaderColor('#000000');
+            tg.setBackgroundColor('#000000');
+
+            tg.ready();
+        }
+    </script>
+</body>
+
+</html>

@@ -47,7 +47,7 @@
                 <div style="display: flex; gap: var(--sp-md); align-items: center;">
                     <div class="panel-icon-wrapper">
                         <div
-                            class="panel-icon {% if panel.panel_type == 'marzban' %}icon-marzban{% elif panel.panel_type == 'rebecca' %}icon-rebecca{% elif panel.panel_type == 'pasargad' %}icon-pasargad{% else %}icon-3xui{% endif %}">
+                            class="panel-icon {% if panel.panel_type == 'marzban' %}icon-marzban{% elif panel.panel_type == 'rebecca' %}icon-rebecca{% elif panel.panel_type == 'pasargad' %}icon-pasargad{% elif panel.panel_type == 'marzneshin' %}icon-marzneshin{% else %}icon-3xui{% endif %}">
                             <i class="fas fa-server"></i>
                         </div>
                     </div>
@@ -55,7 +55,7 @@
                         <div style="font-weight: 800; font-size: 1.1rem; margin-bottom: 2px;">{{ panel.name }}</div>
                         <div style="display: flex; gap: var(--sp-xs);">
                             <span
-                                class="badge {% if panel.panel_type == 'marzban' %}badge-info{% elif panel.panel_type == 'rebecca' %}badge-error{% elif panel.panel_type == 'pasargad' %}badge-success{% else %}badge-warning{% endif %}">
+                                class="badge {% if panel.panel_type == 'marzban' %}badge-info{% elif panel.panel_type == 'rebecca' %}badge-error{% elif panel.panel_type == 'pasargad' %}badge-success{% elif panel.panel_type == 'marzneshin' %}badge-warning{% else %}badge-warning{% endif %}">
                                 {{ panel.panel_type|upper }}
                             </span>
                             {% if panel.is_active %}
@@ -138,7 +138,8 @@
                         <option value="3x-ui">3x-ui (X-UI)</option>
                         <option value="marzban">Marzban</option>
                         <option value="rebecca">Rebecca</option>
-                        <option value="pasargad">Pasargad</option>
+                        <option value="pasargad">Pasarguard</option>
+                        <option value="marzneshin">Marzneshin</option>
                     </select>
                 </div>
             </div>
@@ -239,7 +240,8 @@
                         <option value="3x-ui">3x-ui</option>
                         <option value="marzban">Marzban</option>
                         <option value="rebecca">Rebecca</option>
-                        <option value="pasargad">Pasargad</option>
+                        <option value="pasargad">Pasarguard</option>
+                        <option value="marzneshin">Marzneshin</option>
                     </select>
                 </div>
             </div>
@@ -458,6 +460,10 @@
 
     .icon-pasargad {
         background: linear-gradient(135deg, #10b981, #059669);
+    }
+
+    .icon-marzneshin {
+        background: linear-gradient(135deg, #f59e0b, #d97706);
     }
 
     .detail-row {
@@ -691,14 +697,22 @@
 
             // Populate form
             form.panel_id.value = panel.id;
-            form.name.value = panel.name;
-            form.panel_type.value = panel.panel_type;
-            form.url.value = panel.url;
-            form.api_endpoint.value = panel.api_endpoint;
-            form.username.value = panel.username;
+            form.name.value = panel.name || '';
+            form.panel_type.value = panel.panel_type || '3x-ui';
+            form.url.value = panel.url || '';
+            form.api_endpoint.value = panel.api_endpoint || '';
+            form.username.value = panel.username || '';
             form.subscription_url.value = panel.subscription_url || '';
-            form.price_per_gb.value = panel.price_per_gb;
-            form.sale_type.value = panel.sale_type;
+            form.price_per_gb.value = panel.price_per_gb || 0;
+            form.sale_type.value = panel.sale_type || 'gigabyte';
+
+            // Handle default_inbound_id for Rebecca
+            if (panel.default_inbound_id) {
+                const inboundSelect = document.getElementById('edit_default_inbound_id');
+                if (inboundSelect) {
+                    inboundSelect.value = panel.default_inbound_id;
+                }
+            }
 
             // Handle extra config for Pasargad
             const pasargadContainer = document.getElementById('edit_pasargad_group_container');
@@ -739,12 +753,72 @@
                 }
             } else if (panel.panel_type === 'rebecca') {
                 inboundContainer.style.display = 'block';
-                // Populate inbounds... (existing logic or simplified)
+                // Populate inbounds if available
+                if (panel.default_inbound_id) {
+                    const inboundSelect = document.getElementById('edit_default_inbound_id');
+                    if (inboundSelect) {
+                        inboundSelect.value = panel.default_inbound_id;
+                    }
+                }
             }
 
             document.getElementById('editPanelModal').style.display = 'flex';
         } catch (error) {
             console.error(error);
+            showToast('خطا در بارگذاری اطلاعات پنل', 'error');
+        }
+    }
+
+    // Update Panel Logic
+    async function updatePanel(event) {
+        event.preventDefault();
+        const form = event.target;
+        const formData = new FormData(form);
+        const data = Object.fromEntries(formData.entries());
+        const panelId = data.panel_id;
+
+        // Handle Pasargad extra config
+        if (data.panel_type === 'pasargad') {
+            const group = document.getElementById('edit_pasargad_group').value;
+            if (group) {
+                data.extra_config = { main_group: group };
+            }
+        }
+
+        // Handle default_inbound_id for Rebecca
+        if (data.panel_type === 'rebecca') {
+            const inboundId = document.getElementById('edit_default_inbound_id').value;
+            if (inboundId) {
+                data.default_inbound_id = parseInt(inboundId);
+            }
+        }
+
+        // Remove panel_id from data (it's in URL)
+        delete data.panel_id;
+        delete data.pasargad_group;
+
+        try {
+            const btn = form.querySelector('button[type="submit"]');
+            const originalText = btn.innerHTML;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+            btn.disabled = true;
+
+            await apiCall(`/api/admin/panels/${panelId}`, {
+                method: 'PUT',
+                body: JSON.stringify(data)
+            });
+
+            showToast('پنل با موفقیت بروزرسانی شد', 'success');
+            closeModal('editPanelModal');
+            setTimeout(() => window.location.reload(), 1000);
+        } catch (error) {
+            console.error(error);
+        } finally {
+            const btn = form.querySelector('button[type="submit"]');
+            if (btn) {
+                btn.innerHTML = 'ذخیره تغییرات';
+                btn.disabled = false;
+            }
         }
     }
 
@@ -757,6 +831,7 @@
             setTimeout(() => window.location.reload(), 1000);
         } catch (error) {
             console.error(error);
+            showToast('خطا در حذف پنل', 'error');
         }
     }
 </script>

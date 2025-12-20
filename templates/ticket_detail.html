@@ -8,7 +8,7 @@
 <div class="chat-container-modern">
     <!-- Header -->
     <div class="tickets-page-header"
-        style="padding: 20px 20px 0; margin-bottom: 0; background: var(--bg-app); position: sticky; top: 0; z-index: 90;">
+        style="padding: 20px 20px 0; margin-bottom: 0; background: var(--bg-app); position: sticky; top: 0; z-index: 50;">
         <div style="display: flex; align-items: center; gap: 12px; width: 100%;">
             <a href="{{ url_for('tickets') }}"
                 style="width: 40px; height: 40px; border-radius: 12px; display: flex; align-items: center; justify-content: center; color: white; background: var(--bg-card); border: 1px solid var(--border-light); flex-shrink: 0;">
@@ -90,7 +90,32 @@
     // Scroll to bottom on load
     const chatContainer = document.getElementById('chatMessages');
     if (chatContainer) {
-        chatContainer.scrollTop = chatContainer.scrollHeight;
+        setTimeout(() => {
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }, 100);
+    }
+    
+    // Preserve reply form state when navigating back
+    const replyForm = document.getElementById('replyForm');
+    const messageInput = document.getElementById('messageInput');
+    if (replyForm && messageInput) {
+        // Store form state in sessionStorage
+        const storedMessage = sessionStorage.getItem(`ticket_reply_${ {{ ticket.id }} }`);
+        if (storedMessage) {
+            messageInput.value = storedMessage;
+            messageInput.style.height = 'auto';
+            messageInput.style.height = Math.min(messageInput.scrollHeight, 120) + 'px';
+        }
+        
+        // Save on input
+        messageInput.addEventListener('input', function() {
+            sessionStorage.setItem(`ticket_reply_${ {{ ticket.id }} }`, this.value);
+        });
+        
+        // Clear on successful submit
+        replyForm.addEventListener('submit', function() {
+            sessionStorage.removeItem(`ticket_reply_${ {{ ticket.id }} }`);
+        });
     }
 
     async function sendReply(event) {

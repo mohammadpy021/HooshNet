@@ -642,9 +642,9 @@ class ProfessionalButtonLayout:
             ])
             # Add web admin panel button with bot_name prefix
             if bot_name:
-                admin_webapp_url = f"{base_url}/{bot_name}/admin"
+                admin_webapp_url = f"{base_url}/{bot_name}/admin/login"
             else:
-                admin_webapp_url = f"{base_url}/admin"
+                admin_webapp_url = f"{base_url}/admin/login"
             keyboard.append([
                 InlineKeyboardButton(
                     "👑 ورود به پنل مدیریت وب",
@@ -657,6 +657,9 @@ class ProfessionalButtonLayout:
         keyboard.append([
             InlineKeyboardButton("👥 مدیریت کاربران", callback_data="manage_users"),
             InlineKeyboardButton("🖥️ مدیریت پنل‌ها", callback_data="manage_panels")
+        ])
+        keyboard.append([
+            InlineKeyboardButton("🤝 پنل نمایندگان", web_app=WebAppInfo(url=f"{webapp_url}/reseller/dashboard" if webapp_url else "/reseller/dashboard"))
         ])
         keyboard.append([
             InlineKeyboardButton("📦 مدیریت محصولات", callback_data="manage_products")
@@ -673,6 +676,9 @@ class ProfessionalButtonLayout:
         # Grouping configuration and logs
         keyboard.append([
             InlineKeyboardButton("⚙️ تنظیمات سیستم", callback_data="system_settings"),
+            InlineKeyboardButton("🤖 تنظیمات اطلاعات ربات", callback_data="bot_info_settings")
+        ])
+        keyboard.append([
             InlineKeyboardButton("📋 لاگ‌های سیستم", callback_data="system_logs")
         ])
         
@@ -801,25 +807,20 @@ class ProfessionalButtonLayout:
     def create_system_settings_menu() -> InlineKeyboardMarkup:
         """Create professional system settings menu"""
         keyboard = [
-            # Row 1: Update & Backup
+            # Row 1: Backup & Status
             [
-                InlineKeyboardButton("🔄 آپدیت سیستم", callback_data="sys_update"),
-                InlineKeyboardButton("💾 بکاپ دیتابیس", callback_data="sys_backup")
-            ],
-            # Row 2: Optimize & Status
-            [
-                InlineKeyboardButton("🧹 بهینه‌سازی دیتابیس", callback_data="sys_optimize"),
+                InlineKeyboardButton("💾 بکاپ دیتابیس", callback_data="sys_backup"),
                 InlineKeyboardButton("📊 وضعیت سیستم", callback_data="sys_status")
             ],
-            # Row 3: Logs
+            # Row 2: Logs
             [
                 InlineKeyboardButton("📋 لاگ‌های سیستم", callback_data="sys_logs")
             ],
-            # Row 4: Restart (Full width for safety)
+            # Row 3: Restart (Full width for safety)
             [
                 InlineKeyboardButton("🔄 ریستارت سرویس‌ها", callback_data="sys_restart")
             ],
-            # Row 5: Back
+            # Row 4: Back
             [
                 InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel")
             ]
@@ -827,8 +828,14 @@ class ProfessionalButtonLayout:
         return InlineKeyboardMarkup(keyboard)
 
     @staticmethod
-    def create_volume_suggestions(panel_id: int, price_per_gb: int = 1000) -> InlineKeyboardMarkup:
-        """Create volume suggestions with custom option - professional and dynamic layout"""
+    def create_volume_suggestions(panel_id: int, price_per_gb: int = 1000, discount_rate: float = 0) -> InlineKeyboardMarkup:
+        """Create volume suggestions with custom option - professional and dynamic layout
+        
+        Args:
+            panel_id: Panel ID for callback data
+            price_per_gb: Original price per GB
+            discount_rate: Discount percentage for resellers (0-100)
+        """
         
         # Define volume packages
         volumes = [1, 5, 10, 25, 50, 100]
@@ -841,13 +848,18 @@ class ProfessionalButtonLayout:
             for j in range(2):
                 if i + j < len(volumes):
                     vol = volumes[i + j]
-                    price = vol * price_per_gb
+                    original_price = vol * price_per_gb
                     
-                    # Format price with thousand separators
-                    price_formatted = f"{price:,}"
+                    # Apply discount if reseller
+                    if discount_rate > 0:
+                        discounted_price = int(original_price * (1 - discount_rate / 100))
+                        # Show discounted price with indicator
+                        price_formatted = f"{discounted_price:,}"
+                        button_text = f"{vol}GB • {price_formatted} 🔥"
+                    else:
+                        price_formatted = f"{original_price:,}"
+                        button_text = f"{vol}GB • {price_formatted}"
                     
-                    # Create clean button text without box emoji
-                    button_text = f"{vol}GB • {price_formatted}"
                     row.append(InlineKeyboardButton(
                         button_text, 
                         callback_data=f"select_volume_{panel_id}_{vol}"
@@ -1000,8 +1012,9 @@ class ProfessionalButtonLayout:
             ],
             [
                 InlineKeyboardButton("🟣 Rebecca", callback_data="panel_type_rebecca"),
-                InlineKeyboardButton("🟠 Pasargad", callback_data="panel_type_pasargad")
+                InlineKeyboardButton("🟠 Pasarguard", callback_data="panel_type_pasargad")
             ],
+            [InlineKeyboardButton("🛡️ Marzneshin", callback_data="panel_type_marzneshin")],
             [InlineKeyboardButton("❌ لغو", callback_data="manage_panels")]
         ]
         return InlineKeyboardMarkup(keyboard)

@@ -14,16 +14,18 @@
                 بازگشت به لیست
             </a>
 
-            <div style="display: flex; gap: var(--sp-sm);">
+            <div style="display: flex; gap: var(--sp-sm); flex-wrap: wrap;">
                 {% if ticket.status == 'open' %}
-                <button onclick="closeTicket({{ ticket.id }})" class="btn btn-error">
+                <button onclick="closeTicket({{ ticket.id }})" class="btn"
+                    style="background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); color: white; border: none; box-shadow: 0 4px 12px rgba(220, 38, 38, 0.3); display: flex; align-items: center; gap: var(--sp-xs); transition: all 0.3s ease;">
                     <i class="fas fa-lock"></i>
-                    بستن تیکت
+                    <span>بستن تیکت</span>
                 </button>
                 {% else %}
-                <button onclick="reopenTicket({{ ticket.id }})" class="btn btn-success">
+                <button onclick="reopenTicket({{ ticket.id }})" class="btn"
+                    style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; border: none; box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3); display: flex; align-items: center; gap: var(--sp-xs); transition: all 0.3s ease;">
                     <i class="fas fa-unlock"></i>
-                    باز کردن تیکت
+                    <span>باز کردن تیکت</span>
                 </button>
                 {% endif %}
             </div>
@@ -304,17 +306,183 @@
     }
     }
 
-    async function closeTicket(id) {
-        if (!confirm('آیا از بستن این تیکت اطمینان دارید؟')) return;
+    function closeTicket(id) {
+        // Remove existing modals
+        document.querySelectorAll('.modal-overlay').forEach(m => m.remove());
+
+        // Create modal
+        const modal = document.createElement('div');
+        modal.className = 'modal-overlay';
+        modal.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(5px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 10000;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        `;
+
+        modal.innerHTML = `
+            <div class="modal-card" style="
+                background: var(--p-bg-card);
+                border-radius: var(--radius-xl);
+                padding: 0;
+                width: 90%;
+                max-width: 400px;
+                box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+                transform: scale(0.95);
+                transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+                border: 1px solid var(--border-color);
+                overflow: hidden;
+            ">
+                <div class="modal-header" style="
+                    padding: var(--sp-lg);
+                    border-bottom: 1px solid var(--border-color);
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    background: var(--p-bg-hover);
+                ">
+                    <div style="font-weight: 800; font-size: 1.1rem; display: flex; align-items: center; gap: 10px;">
+                        <span style="
+                            width: 32px; 
+                            height: 32px; 
+                            border-radius: 8px; 
+                            background: rgba(239, 68, 68, 0.1); 
+                            color: #ef4444; 
+                            display: flex; 
+                            align-items: center; 
+                            justify-content: center;
+                        ">
+                            <i class="fas fa-lock"></i>
+                        </span>
+                        بستن تیکت
+                    </div>
+                    <button onclick="this.closest('.modal-overlay').remove()" style="
+                        background: none;
+                        border: none;
+                        color: var(--p-text-muted);
+                        cursor: pointer;
+                        font-size: 1.2rem;
+                        padding: 5px;
+                        transition: color 0.2s;
+                    " onmouseover="this.style.color='var(--p-error)'" onmouseout="this.style.color='var(--p-text-muted)'">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                
+                <div class="modal-body" style="padding: var(--sp-xl);">
+                    <p style="margin-bottom: var(--sp-md); line-height: 1.6; color: var(--p-text-main);">
+                        آیا از بستن این تیکت اطمینان دارید؟
+                    </p>
+                    <div style="
+                        background: rgba(239, 68, 68, 0.05);
+                        border: 1px dashed rgba(239, 68, 68, 0.3);
+                        border-radius: var(--radius-lg);
+                        padding: var(--sp-md);
+                        font-size: 0.9rem;
+                        color: var(--p-text-muted);
+                    ">
+                        <i class="fas fa-info-circle" style="color: #ef4444; margin-left: 5px;"></i>
+                        با بستن تیکت، کاربر دیگر قادر به ارسال پاسخ نخواهد بود، اما تاریخچه گفتگو حفظ می‌شود.
+                    </div>
+                </div>
+                
+                <div class="modal-footer" style="
+                    padding: var(--sp-lg);
+                    border-top: 1px solid var(--border-color);
+                    display: flex;
+                    gap: var(--sp-md);
+                    background: var(--p-bg-main);
+                ">
+                    <button onclick="this.closest('.modal-overlay').remove()" class="btn" style="
+                        flex: 1;
+                        background: transparent;
+                        border: 1px solid var(--border-color);
+                        color: var(--p-text-main);
+                        padding: 10px;
+                        border-radius: var(--radius-lg);
+                        cursor: pointer;
+                        font-weight: 600;
+                    ">
+                        انصراف
+                    </button>
+                    <button onclick="confirmCloseTicket(${id})" class="btn" style="
+                        flex: 2;
+                        background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+                        color: white;
+                        border: none;
+                        padding: 10px;
+                        border-radius: var(--radius-lg);
+                        cursor: pointer;
+                        font-weight: 600;
+                        box-shadow: 0 4px 12px rgba(220, 38, 38, 0.3);
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        gap: 8px;
+                    ">
+                        <i class="fas fa-check"></i>
+                        بله، ببند
+                    </button>
+                </div>
+            </div>
+        `;
+
+        document.body.appendChild(modal);
+
+        // Animation
+        requestAnimationFrame(() => {
+            modal.style.opacity = '1';
+            const card = modal.querySelector('.modal-card');
+            card.style.transform = 'scale(1)';
+        });
+
+        modal.addEventListener('click', function (e) {
+            if (e.target === modal) {
+                modal.style.opacity = '0';
+                modal.querySelector('.modal-card').style.transform = 'scale(0.95)';
+                setTimeout(() => modal.remove(), 300);
+            }
+        });
+    }
+
+    async function confirmCloseTicket(id) {
+        const modal = document.querySelector('.modal-overlay');
+        const btn = modal.querySelector('button[onclick^="confirmCloseTicket"]');
+        const originalContent = btn.innerHTML;
+
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> در حال انجام...';
 
         try {
             await apiCall(`/api/admin/tickets/${id}/close`, {
                 method: 'POST'
             });
-            showToast('تیکت بسته شد', 'success');
-            setTimeout(() => window.location.reload(), 500);
+
+            showToast('تیکت با موفقیت بسته شد', 'success');
+
+            // Close modal with animation
+            modal.style.opacity = '0';
+            modal.querySelector('.modal-card').style.transform = 'scale(0.95)';
+
+            setTimeout(() => {
+                modal.remove();
+                window.location.reload();
+            }, 300);
+
         } catch (error) {
             console.error(error);
+            showToast(error.message || 'خطا در بستن تیکت', 'error');
+            btn.disabled = false;
+            btn.innerHTML = originalContent;
         }
     }
 
@@ -327,6 +495,7 @@
             setTimeout(() => window.location.reload(), 500);
         } catch (error) {
             console.error(error);
+            showToast('خطا در باز کردن تیکت', 'error');
         }
     }
 </script>

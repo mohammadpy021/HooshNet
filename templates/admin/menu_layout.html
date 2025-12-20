@@ -3,130 +3,759 @@
 {% block page_title %}چینش منوی اصلی{% endblock %}
 {% block page_subtitle %}مدیریت و تنظیم دکمه‌های منوی ربات تلگرام{% endblock %}
 
+{% block extra_css %}
+<style>
+    /* ========== Main Layout ========== */
+    .layout-container {
+        display: grid;
+        grid-template-columns: 1fr 320px;
+        gap: var(--sp-xl);
+    }
+
+    @media (max-width: 1024px) {
+        .layout-container {
+            grid-template-columns: 1fr;
+        }
+    }
+
+    /* ========== Header Card ========== */
+    .header-card {
+        background: var(--p-bg-card);
+        border-radius: var(--radius-xl);
+        padding: var(--sp-lg);
+        margin-bottom: var(--sp-xl);
+        border: 1px solid var(--border-color);
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--sp-md);
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .header-info {
+        display: flex;
+        align-items: center;
+        gap: var(--sp-md);
+    }
+
+    .header-icon {
+        width: 48px;
+        height: 48px;
+        border-radius: var(--radius-lg);
+        background: linear-gradient(135deg, rgba(99, 102, 241, 0.15) 0%, rgba(139, 92, 246, 0.15) 100%);
+        color: var(--p-primary);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.25rem;
+    }
+
+    .header-text h3 {
+        font-weight: 800;
+        margin: 0;
+        font-size: 1rem;
+    }
+
+    .header-text p {
+        font-size: 0.8rem;
+        color: var(--p-text-muted);
+        margin: 2px 0 0;
+    }
+
+    .header-actions {
+        display: flex;
+        gap: var(--sp-sm);
+        flex-wrap: wrap;
+    }
+
+    @media (max-width: 600px) {
+        .header-actions {
+            width: 100%;
+        }
+
+        .header-actions .btn {
+            flex: 1;
+        }
+    }
+
+    /* ========== Section Cards ========== */
+    .section-card {
+        background: var(--p-bg-card);
+        border-radius: var(--radius-xl);
+        padding: var(--sp-lg);
+        border: 1px solid var(--border-color);
+        margin-bottom: var(--sp-lg);
+    }
+
+    .section-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: var(--sp-lg);
+        padding-bottom: var(--sp-md);
+        border-bottom: 1px solid var(--border-color);
+    }
+
+    .section-title {
+        display: flex;
+        align-items: center;
+        gap: var(--sp-sm);
+        font-weight: 800;
+        font-size: 1rem;
+    }
+
+    .section-title i {
+        color: var(--p-primary);
+    }
+
+    .section-badge {
+        background: var(--p-bg-hover);
+        padding: 4px 10px;
+        border-radius: var(--radius-full);
+        font-size: 0.75rem;
+        font-weight: 600;
+        color: var(--p-text-muted);
+    }
+
+    /* ========== Menu Preview Grid ========== */
+    .menu-preview-container {
+        background: linear-gradient(135deg, var(--p-bg-main) 0%, var(--p-bg-hover) 100%);
+        border-radius: var(--radius-lg);
+        padding: var(--sp-lg);
+        min-height: 180px;
+        border: 2px dashed var(--border-color);
+    }
+
+    .menu-grid {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .menu-row {
+        display: flex;
+        gap: 8px;
+        min-height: 44px;
+        background: var(--p-bg-card);
+        padding: 8px;
+        border-radius: var(--radius-md);
+        border: 1px solid var(--border-color);
+        transition: all 0.2s ease;
+    }
+
+    .menu-row:hover {
+        border-color: var(--p-primary);
+    }
+
+    .menu-button-preview {
+        background: linear-gradient(135deg, var(--p-primary) 0%, #7c3aed 100%);
+        color: white;
+        padding: 10px 16px;
+        border-radius: var(--radius-md);
+        cursor: move;
+        font-weight: 700;
+        font-size: 0.85rem;
+        flex: 1;
+        text-align: center;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        box-shadow: 0 4px 12px rgba(99, 102, 241, 0.25);
+        transition: all 0.2s ease;
+        user-select: none;
+    }
+
+    .menu-button-preview:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 16px rgba(99, 102, 241, 0.35);
+    }
+
+    .menu-button-preview.inactive {
+        background: var(--p-bg-hover);
+        color: var(--p-text-muted);
+        box-shadow: none;
+    }
+
+    .sortable-ghost {
+        opacity: 0.4;
+        background: var(--p-bg-hover) !important;
+    }
+
+    .sortable-chosen {
+        transform: scale(1.02);
+    }
+
+    .menu-hint {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: var(--sp-xs);
+        margin-top: var(--sp-md);
+        font-size: 0.8rem;
+        color: var(--p-text-muted);
+    }
+
+    .menu-hint i {
+        opacity: 0.7;
+    }
+
+    /* ========== Button Cards Grid ========== */
+    .buttons-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+        gap: var(--sp-md);
+    }
+
+    @media (max-width: 600px) {
+        .buttons-grid {
+            grid-template-columns: 1fr;
+        }
+    }
+
+    .button-card {
+        background: var(--p-bg-hover);
+        border-radius: var(--radius-lg);
+        padding: var(--sp-md);
+        border: 1px solid var(--border-color);
+        transition: all 0.2s ease;
+    }
+
+    .button-card:hover {
+        border-color: var(--p-primary);
+        transform: translateY(-2px);
+    }
+
+    .button-card-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: var(--sp-sm);
+        margin-bottom: var(--sp-sm);
+    }
+
+    .button-info {
+        display: flex;
+        gap: var(--sp-sm);
+        align-items: flex-start;
+        flex: 1;
+        min-width: 0;
+    }
+
+    .button-icon-wrap {
+        width: 36px;
+        height: 36px;
+        border-radius: var(--radius-md);
+        background: var(--p-bg-card);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--p-primary);
+        flex-shrink: 0;
+    }
+
+    .button-details {
+        min-width: 0;
+        flex: 1;
+    }
+
+    .button-name {
+        font-weight: 700;
+        font-size: 0.9rem;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .button-callback {
+        font-size: 0.7rem;
+        color: var(--p-text-muted);
+        font-family: 'Courier New', monospace;
+        background: var(--p-bg-card);
+        padding: 2px 6px;
+        border-radius: var(--radius-sm);
+        display: inline-block;
+        margin-top: 4px;
+        max-width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .button-status {
+        flex-shrink: 0;
+    }
+
+    .button-actions {
+        display: flex;
+        gap: var(--sp-xs);
+        margin-top: var(--sp-sm);
+    }
+
+    .button-actions .btn {
+        flex: 1;
+        padding: 8px;
+        font-size: 0.8rem;
+    }
+
+    /* ========== Available Buttons ========== */
+    .available-buttons-list {
+        display: flex;
+        flex-direction: column;
+        gap: var(--sp-sm);
+        max-height: 400px;
+        overflow-y: auto;
+    }
+
+    @media (max-width: 1024px) {
+        .available-buttons-list {
+            max-height: none;
+        }
+    }
+
+    .available-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: var(--sp-sm);
+        background: var(--p-bg-hover);
+        padding: var(--sp-sm) var(--sp-md);
+        border-radius: var(--radius-md);
+        border: 1px solid var(--border-color);
+        transition: all 0.2s ease;
+    }
+
+    .available-item:hover {
+        border-color: var(--p-success);
+        background: rgba(16, 185, 129, 0.05);
+    }
+
+    .available-info {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .available-name {
+        font-weight: 700;
+        font-size: 0.85rem;
+    }
+
+    .available-desc {
+        font-size: 0.75rem;
+        color: var(--p-text-muted);
+        margin-top: 2px;
+    }
+
+    /* ========== Modals ========== */
+    .modal-overlay {
+        display: none;
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.75);
+        backdrop-filter: blur(8px);
+        z-index: 99999;
+        align-items: center;
+        justify-content: center;
+        padding: var(--sp-lg);
+        overflow-y: auto;
+    }
+
+    .modal-overlay.active {
+        display: flex;
+    }
+
+    .modal-card {
+        background: var(--p-bg-card);
+        border-radius: var(--radius-xl);
+        width: 100%;
+        max-width: 480px;
+        max-height: 90vh;
+        overflow: hidden;
+        border: 1px solid var(--border-color);
+        box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+        animation: modalSlideIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+        display: flex;
+        flex-direction: column;
+    }
+
+    @keyframes modalSlideIn {
+        from {
+            opacity: 0;
+            transform: scale(0.95) translateY(10px);
+        }
+
+        to {
+            opacity: 1;
+            transform: scale(1) translateY(0);
+        }
+    }
+
+    .modal-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: var(--sp-lg);
+        border-bottom: 1px solid var(--border-color);
+        background: var(--p-bg-hover);
+    }
+
+    .modal-title {
+        display: flex;
+        align-items: center;
+        gap: var(--sp-sm);
+        font-weight: 800;
+        font-size: 1rem;
+    }
+
+    .modal-title i {
+        color: var(--p-primary);
+    }
+
+    .modal-close {
+        background: none;
+        border: none;
+        color: var(--p-text-muted);
+        font-size: 1.25rem;
+        cursor: pointer;
+        padding: 4px;
+        transition: color 0.2s;
+    }
+
+    .modal-close:hover {
+        color: var(--p-error);
+    }
+
+    .modal-body {
+        padding: var(--sp-lg);
+        overflow-y: auto;
+        flex: 1;
+    }
+
+    .modal-footer {
+        display: flex;
+        gap: var(--sp-md);
+        padding: var(--sp-lg);
+        border-top: 1px solid var(--border-color);
+        background: var(--p-bg-main);
+    }
+
+    .modal-footer .btn {
+        flex: 1;
+    }
+
+    /* ========== Form Elements ========== */
+    .form-group {
+        margin-bottom: var(--sp-md);
+    }
+
+    .form-label {
+        display: block;
+        font-weight: 600;
+        margin-bottom: var(--sp-xs);
+        font-size: 0.85rem;
+    }
+
+    .form-control {
+        width: 100%;
+        padding: 10px 14px;
+        border: 1px solid var(--border-color);
+        border-radius: var(--radius-md);
+        background: var(--p-bg-main);
+        color: var(--p-text-main);
+        font-size: 0.9rem;
+        transition: all 0.2s ease;
+    }
+
+    .form-control:focus {
+        outline: none;
+        border-color: var(--p-primary);
+        box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+    }
+
+    .form-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: var(--sp-md);
+    }
+
+    @media (max-width: 480px) {
+        .form-row {
+            grid-template-columns: 1fr;
+        }
+    }
+
+    /* ========== Badges ========== */
+    .badge {
+        display: inline-flex;
+        align-items: center;
+        padding: 4px 10px;
+        border-radius: var(--radius-full);
+        font-size: 0.7rem;
+        font-weight: 700;
+    }
+
+    .badge-success {
+        background: rgba(16, 185, 129, 0.1);
+        color: #10b981;
+    }
+
+    .badge-error {
+        background: rgba(239, 68, 68, 0.1);
+        color: #ef4444;
+    }
+
+    /* ========== Buttons ========== */
+    .btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: var(--sp-xs);
+        padding: 10px 16px;
+        border-radius: var(--radius-md);
+        font-weight: 600;
+        font-size: 0.85rem;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        border: none;
+        white-space: nowrap;
+    }
+
+    .btn-primary {
+        background: linear-gradient(135deg, var(--p-primary) 0%, #7c3aed 100%);
+        color: white;
+        box-shadow: 0 4px 12px rgba(99, 102, 241, 0.25);
+    }
+
+    .btn-primary:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 16px rgba(99, 102, 241, 0.35);
+    }
+
+    .btn-success {
+        background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+        color: white;
+        box-shadow: 0 4px 12px rgba(16, 185, 129, 0.25);
+    }
+
+    .btn-success:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 16px rgba(16, 185, 129, 0.35);
+    }
+
+    .btn-outline {
+        background: transparent;
+        border: 1px solid var(--border-color);
+        color: var(--p-text-main);
+    }
+
+    .btn-outline:hover {
+        background: var(--p-bg-hover);
+        border-color: var(--p-primary);
+        color: var(--p-primary);
+    }
+
+    .btn-secondary {
+        background: var(--p-bg-hover);
+        border: 1px solid var(--border-color);
+        color: var(--p-text-main);
+    }
+
+    .btn-sm {
+        padding: 6px 10px;
+        font-size: 0.75rem;
+    }
+
+    .btn-icon-only {
+        padding: 8px;
+        width: 34px;
+        height: 34px;
+    }
+
+    .btn-danger {
+        color: var(--p-error);
+        border-color: var(--p-error);
+    }
+
+    .btn-danger:hover {
+        background: rgba(239, 68, 68, 0.1);
+        color: var(--p-error);
+    }
+
+    /* ========== Empty State ========== */
+    .empty-state {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: var(--sp-xl);
+        color: var(--p-text-muted);
+        text-align: center;
+    }
+
+    .empty-state i {
+        font-size: 2.5rem;
+        opacity: 0.5;
+        margin-bottom: var(--sp-md);
+    }
+
+    /* ========== Scrollbar ========== */
+    .available-buttons-list::-webkit-scrollbar {
+        width: 6px;
+    }
+
+    .available-buttons-list::-webkit-scrollbar-track {
+        background: var(--p-bg-main);
+        border-radius: 3px;
+    }
+
+    .available-buttons-list::-webkit-scrollbar-thumb {
+        background: var(--border-color);
+        border-radius: 3px;
+    }
+
+    .available-buttons-list::-webkit-scrollbar-thumb:hover {
+        background: var(--p-text-muted);
+    }
+</style>
+{% endblock %}
+
 {% block extra_js %}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js"></script>
 {% endblock %}
 
 {% block content %}
 <div class="fade-in">
-    <!-- Actions Bar -->
-    <div class="card" style="margin-bottom: var(--sp-xl);">
-        <div
-            style="display: flex; flex-wrap: wrap; gap: var(--sp-md); justify-content: space-between; align-items: center;">
-            <div style="display: flex; align-items: center; gap: var(--sp-md);">
-                <div
-                    style="width: 40px; height: 40px; border-radius: var(--radius-lg); background: rgba(99, 102, 241, 0.1); color: var(--p-info); display: flex; align-items: center; justify-content: center;">
-                    <i class="fas fa-th"></i>
-                </div>
-                <div>
-                    <div style="font-weight: 700;">مدیریت منو</div>
-                    <div style="font-size: 0.8rem; color: var(--p-text-muted);">دکمه‌ها را بکشید و رها کنید</div>
-                </div>
+    <!-- Header Card -->
+    <div class="header-card">
+        <div class="header-info">
+            <div class="header-icon">
+                <i class="fas fa-th-large"></i>
             </div>
-
-            <div style="display: flex; gap: var(--sp-sm);">
-                <button class="btn btn-primary" onclick="showAddButtonModal()">
-                    <i class="fas fa-plus"></i>
-                    <span>افزودن دکمه جدید</span>
-                </button>
-                <button class="btn btn-success" onclick="saveLayout()">
-                    <i class="fas fa-save"></i>
-                    <span>ذخیره چینش</span>
-                </button>
+            <div class="header-text">
+                <h3>مدیریت منوی ربات</h3>
+                <p>دکمه‌ها را بکشید و رها کنید تا چینش منو تغییر کند</p>
             </div>
+        </div>
+        <div class="header-actions">
+            <button class="btn btn-primary" onclick="showAddButtonModal()">
+                <i class="fas fa-plus"></i>
+                <span>افزودن دکمه</span>
+            </button>
+            <button class="btn btn-success" onclick="saveLayout()">
+                <i class="fas fa-save"></i>
+                <span>ذخیره چینش</span>
+            </button>
         </div>
     </div>
 
-    <div style="display: grid; grid-template-columns: 1fr 350px; gap: var(--sp-xl);">
-        <!-- Menu Preview (Left Column) -->
-        <div style="display: flex; flex-direction: column; gap: var(--sp-xl);">
-            <div class="card">
-                <div class="card-header"
-                    style="margin-bottom: var(--sp-md); padding-bottom: var(--sp-md); border-bottom: 1px solid var(--border-color);">
-                    <div style="font-weight: 800; font-size: 1.1rem;">پیش‌نمایش منو</div>
+    <!-- Main Layout -->
+    <div class="layout-container">
+        <!-- Left Column -->
+        <div>
+            <!-- Menu Preview -->
+            <div class="section-card">
+                <div class="section-header">
+                    <div class="section-title">
+                        <i class="fas fa-eye"></i>
+                        پیش‌نمایش منو
+                    </div>
+                    <span class="section-badge">{{ buttons|length }} دکمه</span>
                 </div>
-
-                <div id="menuGrid" class="menu-grid">
-                    <!-- Rows will be added here dynamically -->
+                <div class="menu-preview-container">
+                    <div id="menuGrid" class="menu-grid">
+                        <!-- Rows will be added here dynamically -->
+                    </div>
                 </div>
-
-                <div class="text-muted" style="margin-top: var(--sp-md); font-size: 0.9rem; text-align: center;">
-                    <i class="fas fa-info-circle"></i>
-                    برای تغییر چیدمان، دکمه‌ها را بکشید و رها کنید.
+                <div class="menu-hint">
+                    <i class="fas fa-arrows-alt"></i>
+                    برای تغییر چیدمان، دکمه‌ها را بکشید و رها کنید
                 </div>
             </div>
 
-            <!-- Current Buttons List -->
-            <div class="card">
-                <div class="card-header"
-                    style="margin-bottom: var(--sp-md); padding-bottom: var(--sp-md); border-bottom: 1px solid var(--border-color);">
-                    <div style="font-weight: 800; font-size: 1.1rem;">لیست دکمه‌های فعال</div>
+            <!-- Active Buttons List -->
+            <div class="section-card">
+                <div class="section-header">
+                    <div class="section-title">
+                        <i class="fas fa-list"></i>
+                        لیست دکمه‌های فعال
+                    </div>
                 </div>
-
-                <div id="buttonsList" class="grid-2">
+                {% if buttons %}
+                <div class="buttons-grid">
                     {% for button in buttons %}
-                    <div class="card button-card" data-button-key="{{ button.button_key }}"
-                        data-display-order="{{ button.display_order }}" style="background: var(--p-bg-hover);">
-                        <div
-                            style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: var(--sp-sm);">
-                            <div style="display: flex; gap: var(--sp-sm); align-items: center;">
-                                <div
-                                    style="width: 32px; height: 32px; border-radius: var(--radius-md); background: var(--p-bg-card); display: flex; align-items: center; justify-content: center; color: var(--p-primary);">
+                    <div class="button-card" data-button-key="{{ button.button_key }}">
+                        <div class="button-card-header">
+                            <div class="button-info">
+                                <div class="button-icon-wrap">
                                     <i class="fas fa-square"></i>
                                 </div>
-                                <div>
-                                    <div style="font-weight: 700;">{{ button.button_text }}</div>
-                                    <div style="font-size: 0.7rem; color: var(--p-text-muted); font-family: monospace;">
-                                        {{ button.callback_data }}</div>
+                                <div class="button-details">
+                                    <div class="button-name">{{ button.button_text }}</div>
+                                    <div class="button-callback">{{ button.callback_data }}</div>
                                 </div>
                             </div>
-                            <div class="badge {% if button.is_active %}badge-success{% else %}badge-error{% endif %}">
-                                {{ 'فعال' if button.is_active else 'غیرفعال' }}
+                            <div class="button-status">
+                                <span
+                                    class="badge {% if button.is_active %}badge-success{% else %}badge-error{% endif %}">
+                                    {{ 'فعال' if button.is_active else 'غیرفعال' }}
+                                </span>
                             </div>
                         </div>
-
-                        <div style="display: flex; gap: var(--sp-xs); margin-top: var(--sp-sm);">
+                        <div class="button-actions">
                             <button class="btn btn-sm btn-outline" onclick="editButton('{{ button.button_key }}')"
-                                style="flex: 1;">
+                                title="ویرایش">
                                 <i class="fas fa-edit"></i>
                             </button>
                             <button class="btn btn-sm btn-outline" onclick="toggleButton('{{ button.button_key }}')"
-                                style="flex: 1;">
+                                title="تغییر وضعیت">
                                 <i class="fas fa-power-off"></i>
                             </button>
-                            <button class="btn btn-sm btn-outline" onclick="deleteButton('{{ button.button_key }}')"
-                                style="flex: 1; color: var(--p-error); border-color: var(--p-error);">
+                            <button class="btn btn-sm btn-outline btn-danger"
+                                onclick="deleteButton('{{ button.button_key }}')" title="حذف">
                                 <i class="fas fa-trash"></i>
                             </button>
                         </div>
                     </div>
                     {% endfor %}
                 </div>
+                {% else %}
+                <div class="empty-state">
+                    <i class="fas fa-inbox"></i>
+                    <p>هنوز دکمه‌ای اضافه نشده است</p>
+                </div>
+                {% endif %}
             </div>
         </div>
 
-        <!-- Available Buttons (Right Column) -->
-        <div style="display: flex; flex-direction: column; gap: var(--sp-xl);">
-            <div class="card">
-                <div class="card-header"
-                    style="margin-bottom: var(--sp-md); padding-bottom: var(--sp-md); border-bottom: 1px solid var(--border-color);">
-                    <div style="font-weight: 800; font-size: 1.1rem;">دکمه‌های آماده</div>
+        <!-- Right Column - Available Buttons -->
+        <div>
+            <div class="section-card">
+                <div class="section-header">
+                    <div class="section-title">
+                        <i class="fas fa-puzzle-piece"></i>
+                        دکمه‌های آماده
+                    </div>
                 </div>
-
-                <div class="available-buttons-list" style="display: flex; flex-direction: column; gap: var(--sp-sm);">
+                {% if available_buttons %}
+                <div class="available-buttons-list">
                     {% for button in available_buttons %}
-                    <div class="available-button-item" data-button-key="{{ button.key }}">
-                        <div style="display: flex; justify-content: space-between; align-items: center;">
-                            <div style="font-weight: 700;">{{ button.text }}</div>
-                            <button class="btn btn-sm btn-primary" onclick="addButtonFromTemplate('{{ button.key }}')">
-                                <i class="fas fa-plus"></i>
-                            </button>
+                    <div class="available-item">
+                        <div class="available-info">
+                            <div class="available-name">{{ button.text }}</div>
+                            <div class="available-desc">{{ button.description }}</div>
                         </div>
-                        <div style="font-size: 0.8rem; color: var(--p-text-muted); margin-top: 2px;">{{
-                            button.description }}</div>
+                        <button class="btn btn-sm btn-success" onclick="addButtonFromTemplate('{{ button.key }}')"
+                            title="افزودن">
+                            <i class="fas fa-plus"></i>
+                        </button>
                     </div>
                     {% endfor %}
                 </div>
+                {% else %}
+                <div class="empty-state">
+                    <i class="fas fa-check-circle"></i>
+                    <p>همه دکمه‌های آماده اضافه شده‌اند</p>
+                </div>
+                {% endif %}
             </div>
         </div>
     </div>
@@ -135,53 +764,59 @@
 <!-- Add Button Modal -->
 <div id="addButtonModal" class="modal-overlay">
     <div class="modal-card">
-        <div class="card-header">
-            <div class="card-title">
-                <i class="fas fa-plus-circle" style="color: var(--p-primary);"></i>
+        <div class="modal-header">
+            <div class="modal-title">
+                <i class="fas fa-plus-circle"></i>
                 افزودن دکمه جدید
             </div>
-            <button onclick="closeModal('addButtonModal')" class="close-btn"><i class="fas fa-times"></i></button>
+            <button class="modal-close" onclick="closeModal('addButtonModal')">
+                <i class="fas fa-times"></i>
+            </button>
         </div>
-        <form onsubmit="addButton(event)">
-            <div class="form-group">
-                <label class="form-label">کلید دکمه (یکتا)</label>
-                <input type="text" name="button_key" class="form-control" required placeholder="مثال: custom_button">
-            </div>
-            <div class="form-group">
-                <label class="form-label">متن دکمه</label>
-                <input type="text" name="button_text" class="form-control" required placeholder="مثال: 🔵 دکمه سفارشی">
-            </div>
-            <div class="form-group">
-                <label class="form-label">Callback Data</label>
-                <input type="text" name="callback_data" class="form-control" required placeholder="مثال: custom_action">
-            </div>
-            <div class="form-row">
+        <form id="addButtonForm" onsubmit="addButton(event)">
+            <div class="modal-body">
                 <div class="form-group">
-                    <label class="form-label">نوع دکمه</label>
-                    <select name="button_type" class="form-control">
-                        <option value="callback">Callback</option>
-                        <option value="webapp">Web App</option>
-                    </select>
+                    <label class="form-label">کلید دکمه (یکتا)</label>
+                    <input type="text" name="button_key" class="form-control" required
+                        placeholder="مثال: custom_button">
                 </div>
                 <div class="form-group">
-                    <label class="form-label">URL وب اپ</label>
-                    <input type="url" name="web_app_url" class="form-control" placeholder="https://example.com">
-                </div>
-            </div>
-            <div class="form-row">
-                <div class="form-group">
-                    <label class="form-label">ردیف</label>
-                    <input type="number" name="row_position" class="form-control" value="0" min="0">
+                    <label class="form-label">متن دکمه</label>
+                    <input type="text" name="button_text" class="form-control" required
+                        placeholder="مثال: 🔵 دکمه سفارشی">
                 </div>
                 <div class="form-group">
-                    <label class="form-label">ستون</label>
-                    <input type="number" name="column_position" class="form-control" value="0" min="0">
+                    <label class="form-label">Callback Data</label>
+                    <input type="text" name="callback_data" class="form-control" required
+                        placeholder="مثال: custom_action">
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">نوع دکمه</label>
+                        <select name="button_type" class="form-control">
+                            <option value="callback">Callback</option>
+                            <option value="webapp">Web App</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">URL وب اپ</label>
+                        <input type="url" name="web_app_url" class="form-control" placeholder="https://example.com">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">ردیف</label>
+                        <input type="number" name="row_position" class="form-control" value="0" min="0">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">ستون</label>
+                        <input type="number" name="column_position" class="form-control" value="0" min="0">
+                    </div>
                 </div>
             </div>
-            <div style="display: flex; gap: var(--sp-md); margin-top: var(--sp-lg);">
-                <button type="button" class="btn btn-secondary" onclick="closeModal('addButtonModal')"
-                    style="flex: 1;">لغو</button>
-                <button type="submit" class="btn btn-primary" style="flex: 2;">افزودن</button>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closeModal('addButtonModal')">لغو</button>
+                <button type="submit" class="btn btn-primary">افزودن</button>
             </div>
         </form>
     </div>
@@ -190,152 +825,68 @@
 <!-- Edit Button Modal -->
 <div id="editButtonModal" class="modal-overlay">
     <div class="modal-card">
-        <div class="card-header">
-            <div class="card-title">
-                <i class="fas fa-edit" style="color: var(--p-warning);"></i>
+        <div class="modal-header">
+            <div class="modal-title">
+                <i class="fas fa-edit"></i>
                 ویرایش دکمه
             </div>
-            <button onclick="closeModal('editButtonModal')" class="close-btn"><i class="fas fa-times"></i></button>
+            <button class="modal-close" onclick="closeModal('editButtonModal')">
+                <i class="fas fa-times"></i>
+            </button>
         </div>
         <form id="editButtonForm" onsubmit="updateButton(event)">
             <input type="hidden" name="button_key">
-            <div class="form-group">
-                <label class="form-label">متن دکمه</label>
-                <input type="text" name="button_text" class="form-control" required>
-            </div>
-            <div class="form-group">
-                <label class="form-label">Callback Data</label>
-                <input type="text" name="callback_data" class="form-control" required>
-            </div>
-            <div class="form-row">
+            <div class="modal-body">
                 <div class="form-group">
-                    <label class="form-label">نوع دکمه</label>
-                    <select name="button_type" class="form-control">
-                        <option value="callback">Callback</option>
-                        <option value="webapp">Web App</option>
-                    </select>
+                    <label class="form-label">متن دکمه</label>
+                    <input type="text" name="button_text" class="form-control" required>
                 </div>
                 <div class="form-group">
-                    <label class="form-label">URL وب اپ</label>
-                    <input type="url" name="web_app_url" class="form-control">
+                    <label class="form-label">Callback Data</label>
+                    <input type="text" name="callback_data" class="form-control" required>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">نوع دکمه</label>
+                        <select name="button_type" class="form-control">
+                            <option value="callback">Callback</option>
+                            <option value="webapp">Web App</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">URL وب اپ</label>
+                        <input type="url" name="web_app_url" class="form-control">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">ردیف</label>
+                        <input type="number" name="row_position" class="form-control" min="0">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">ستون</label>
+                        <input type="number" name="column_position" class="form-control" min="0">
+                    </div>
                 </div>
             </div>
-            <div class="form-row">
-                <div class="form-group">
-                    <label class="form-label">ردیف</label>
-                    <input type="number" name="row_position" class="form-control" min="0">
-                </div>
-                <div class="form-group">
-                    <label class="form-label">ستون</label>
-                    <input type="number" name="column_position" class="form-control" min="0">
-                </div>
-            </div>
-            <div style="display: flex; gap: var(--sp-md); margin-top: var(--sp-lg);">
-                <button type="button" class="btn btn-secondary" onclick="closeModal('editButtonModal')"
-                    style="flex: 1;">لغو</button>
-                <button type="submit" class="btn btn-primary" style="flex: 2;">ذخیره</button>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closeModal('editButtonModal')">لغو</button>
+                <button type="submit" class="btn btn-primary">ذخیره</button>
             </div>
         </form>
     </div>
 </div>
 
-<style>
-    .menu-grid {
-        display: flex;
-        flex-direction: column;
-        gap: 10px;
-        background: var(--p-bg-main);
-        padding: 15px;
-        border-radius: var(--radius-lg);
-        min-height: 200px;
-    }
-
-    .menu-row {
-        display: flex;
-        gap: 10px;
-        background: var(--p-bg-card);
-        padding: 10px;
-        border-radius: var(--radius-md);
-        border: 1px dashed var(--border-color);
-        min-height: 50px;
-    }
-
-    .menu-button-preview {
-        background: var(--p-primary);
-        color: white;
-        padding: 10px 15px;
-        border-radius: var(--radius-md);
-        cursor: move;
-        font-weight: 700;
-        font-size: 0.9rem;
-        flex: 1;
-        text-align: center;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-    }
-
-    .available-button-item {
-        background: var(--p-bg-hover);
-        padding: 10px;
-        border-radius: var(--radius-md);
-        border: 1px solid var(--border-color);
-    }
-
-    .sortable-ghost {
-        opacity: 0.5;
-        background: var(--p-bg-hover);
-    }
-
-    /* Modal Styles */
-    .modal-overlay {
-        display: none;
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        background: rgba(0, 0, 0, 0.5);
-        z-index: 1000;
-        align-items: center;
-        justify-content: center;
-        backdrop-filter: blur(5px);
-    }
-
-    .modal-card {
-        background: var(--p-bg-main);
-        border-radius: var(--radius-xl);
-        width: 100%;
-        max-width: 500px;
-        padding: var(--sp-xl);
-        border: 1px solid var(--border-color);
-        box-shadow: var(--shadow-xl);
-        animation: modalSlideIn 0.3s ease;
-    }
-
-    @keyframes modalSlideIn {
-        from {
-            opacity: 0;
-            transform: translateY(20px);
-        }
-
-        to {
-            opacity: 1;
-            transform: translateY(0);
-        }
-    }
-</style>
-
 <script>
-    // Initialize Sortable
+    // Data from server
+    let buttons = {{ buttons| tojson }};
+    const availableButtons = {{ available_buttons| tojson }};
+
+    // Initialize on DOM ready
     document.addEventListener('DOMContentLoaded', function () {
         renderMenuGrid();
         initSortable();
     });
-
-    let buttons = {{ buttons| tojson }};
-    const availableButtons = {{ available_buttons| tojson }};
 
     function renderMenuGrid() {
         const grid = document.getElementById('menuGrid');
@@ -344,12 +895,23 @@
         // Group buttons by row
         const rows = {};
         buttons.forEach(btn => {
-            if (!rows[btn.row_position]) rows[btn.row_position] = [];
-            rows[btn.row_position].push(btn);
+            const row = btn.row_position || 0;
+            if (!rows[row]) rows[row] = [];
+            rows[row].push(btn);
         });
 
         // Sort rows
         const sortedRowKeys = Object.keys(rows).sort((a, b) => parseInt(a) - parseInt(b));
+
+        if (sortedRowKeys.length === 0) {
+            // Show empty state
+            const emptyRow = document.createElement('div');
+            emptyRow.className = 'menu-row';
+            emptyRow.dataset.row = '0';
+            emptyRow.innerHTML = '<div style="flex: 1; text-align: center; color: var(--p-text-muted); font-size: 0.85rem; padding: 8px;">دکمه‌ها را اینجا بکشید...</div>';
+            grid.appendChild(emptyRow);
+            return;
+        }
 
         // Create rows
         sortedRowKeys.forEach(rowKey => {
@@ -357,12 +919,13 @@
             rowDiv.className = 'menu-row';
             rowDiv.dataset.row = rowKey;
 
-            // Sort buttons in row
-            rows[rowKey].sort((a, b) => a.column_position - b.column_position);
+            // Sort buttons in row by column
+            rows[rowKey].sort((a, b) => (a.column_position || 0) - (b.column_position || 0));
 
             rows[rowKey].forEach(btn => {
                 const btnDiv = document.createElement('div');
                 btnDiv.className = 'menu-button-preview';
+                if (!btn.is_active) btnDiv.classList.add('inactive');
                 btnDiv.textContent = btn.button_text;
                 btnDiv.dataset.key = btn.button_key;
                 rowDiv.appendChild(btnDiv);
@@ -371,10 +934,11 @@
             grid.appendChild(rowDiv);
         });
 
-        // Add an empty row at the end for dropping
+        // Add empty row at end for dropping new items
         const emptyRow = document.createElement('div');
         emptyRow.className = 'menu-row';
-        emptyRow.dataset.row = sortedRowKeys.length > 0 ? parseInt(sortedRowKeys[sortedRowKeys.length - 1]) + 1 : 0;
+        const lastRow = sortedRowKeys.length > 0 ? parseInt(sortedRowKeys[sortedRowKeys.length - 1]) + 1 : 0;
+        emptyRow.dataset.row = lastRow;
         grid.appendChild(emptyRow);
     }
 
@@ -383,10 +947,13 @@
         rows.forEach(row => {
             new Sortable(row, {
                 group: 'menu',
-                animation: 150,
+                animation: 200,
                 ghostClass: 'sortable-ghost',
+                chosenClass: 'sortable-chosen',
                 onEnd: function (evt) {
                     updateButtonPositions();
+                    renderMenuGrid();
+                    initSortable();
                 }
             });
         });
@@ -394,7 +961,6 @@
 
     function updateButtonPositions() {
         const rows = document.querySelectorAll('.menu-row');
-        const newButtons = [];
 
         rows.forEach((row, rowIndex) => {
             const btns = row.querySelectorAll('.menu-button-preview');
@@ -404,17 +970,19 @@
                 if (originalBtn) {
                     originalBtn.row_position = rowIndex;
                     originalBtn.column_position = colIndex;
-                    newButtons.push(originalBtn);
                 }
             });
         });
-
-        buttons = newButtons;
-        // Re-render to clean up empty rows logic if needed, or just keep as is
     }
 
     async function saveLayout() {
         updateButtonPositions();
+
+        const saveBtn = document.querySelector('.header-actions .btn-success');
+        const originalText = saveBtn.innerHTML;
+        saveBtn.disabled = true;
+        saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> در حال ذخیره...';
+
         try {
             await apiCall('/api/admin/menu-layout/save', {
                 method: 'POST',
@@ -423,35 +991,49 @@
             showToast('چینش منو با موفقیت ذخیره شد', 'success');
         } catch (error) {
             console.error(error);
+            showToast('خطا در ذخیره چینش', 'error');
+        } finally {
+            saveBtn.disabled = false;
+            saveBtn.innerHTML = originalText;
         }
     }
 
     // Modal Functions
     function showAddButtonModal() {
-        document.getElementById('addButtonModal').style.display = 'flex';
+        document.getElementById('addButtonForm').reset();
+        document.getElementById('addButtonModal').classList.add('active');
     }
 
     function closeModal(id) {
-        document.getElementById(id).style.display = 'none';
+        document.getElementById(id).classList.remove('active');
     }
 
-    window.onclick = function (event) {
-        if (event.target.classList.contains('modal-overlay')) {
-            event.target.style.display = 'none';
-        }
-    }
+    // Close modal on backdrop click
+    document.querySelectorAll('.modal-overlay').forEach(modal => {
+        modal.addEventListener('click', function (e) {
+            if (e.target === modal) {
+                modal.classList.remove('active');
+            }
+        });
+    });
 
     async function addButton(event) {
         event.preventDefault();
         const form = event.target;
+        const submitBtn = form.querySelector('button[type="submit"]');
+        const originalText = submitBtn.innerHTML;
+
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+
         const data = {
             button_key: form.button_key.value,
             button_text: form.button_text.value,
             callback_data: form.callback_data.value,
             button_type: form.button_type.value,
             web_app_url: form.web_app_url.value,
-            row_position: parseInt(form.row_position.value),
-            column_position: parseInt(form.column_position.value),
+            row_position: parseInt(form.row_position.value) || 0,
+            column_position: parseInt(form.column_position.value) || 0,
             is_visible_for_admin: true,
             is_visible_for_users: true
         };
@@ -462,15 +1044,22 @@
                 body: JSON.stringify(data)
             });
             showToast('دکمه با موفقیت اضافه شد', 'success');
-            setTimeout(() => window.location.reload(), 1000);
+            setTimeout(() => window.location.reload(), 800);
         } catch (error) {
             console.error(error);
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = originalText;
         }
     }
 
     async function addButtonFromTemplate(key) {
         const template = availableButtons.find(b => b.key === key);
         if (!template) return;
+
+        const btn = event.target.closest('button');
+        const originalText = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
 
         const data = {
             button_key: key,
@@ -489,9 +1078,11 @@
                 body: JSON.stringify(data)
             });
             showToast('دکمه با موفقیت اضافه شد', 'success');
-            setTimeout(() => window.location.reload(), 1000);
+            setTimeout(() => window.location.reload(), 800);
         } catch (error) {
             console.error(error);
+            btn.disabled = false;
+            btn.innerHTML = originalText;
         }
     }
 
@@ -503,7 +1094,7 @@
                 method: 'DELETE'
             });
             showToast('دکمه حذف شد', 'success');
-            setTimeout(() => window.location.reload(), 1000);
+            setTimeout(() => window.location.reload(), 800);
         } catch (error) {
             console.error(error);
         }
@@ -535,23 +1126,29 @@
         form.callback_data.value = btn.callback_data;
         form.button_type.value = btn.button_type || 'callback';
         form.web_app_url.value = btn.web_app_url || '';
-        form.row_position.value = btn.row_position;
-        form.column_position.value = btn.column_position;
+        form.row_position.value = btn.row_position || 0;
+        form.column_position.value = btn.column_position || 0;
 
-        document.getElementById('editButtonModal').style.display = 'flex';
+        document.getElementById('editButtonModal').classList.add('active');
     }
 
     async function updateButton(event) {
         event.preventDefault();
         const form = event.target;
         const key = form.button_key.value;
+        const submitBtn = form.querySelector('button[type="submit"]');
+        const originalText = submitBtn.innerHTML;
+
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+
         const data = {
             button_text: form.button_text.value,
             callback_data: form.callback_data.value,
             button_type: form.button_type.value,
             web_app_url: form.web_app_url.value,
-            row_position: parseInt(form.row_position.value),
-            column_position: parseInt(form.column_position.value)
+            row_position: parseInt(form.row_position.value) || 0,
+            column_position: parseInt(form.column_position.value) || 0
         };
 
         try {
@@ -560,9 +1157,11 @@
                 body: JSON.stringify(data)
             });
             showToast('دکمه با موفقیت ویرایش شد', 'success');
-            setTimeout(() => window.location.reload(), 1000);
+            setTimeout(() => window.location.reload(), 800);
         } catch (error) {
             console.error(error);
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = originalText;
         }
     }
 </script>

@@ -89,9 +89,11 @@ async def show_force_join_message(update: Update, context: ContextTypes.DEFAULT_
     
     channel_id = bot_config.get('channel_id', '@YourChannel')
     channel_link = bot_config.get('channel_link', 'https://t.me/YourChannel')
+    bot_name = bot_config.get('bot_name', 'ربات')
     
-    message = MessageTemplates.WELCOME_MESSAGES.get('force_join', """
-📢 برای استفاده از ربات آزاد‌جو نت، لطفاً ابتدا در کانال ما عضو شوید
+    # Get the message template and format it with bot_name
+    message_template = MessageTemplates.WELCOME_MESSAGES.get('force_join', """
+📢 برای استفاده از ربات {bot_name}، لطفاً ابتدا در کانال ما عضو شوید
 
 🔹 چرا عضویت در کانال؟
 • دریافت آخرین اخبار و به‌روزرسانی‌ها
@@ -104,14 +106,18 @@ async def show_force_join_message(update: Update, context: ContextTypes.DEFAULT_
 ۲. وارد کانال شوید و عضو شوید
 ۳. به ربات برگردید و دوباره /start را بزنید
 
-🌐 آزاد‌جو نت | دریچه‌ای به دنیای آزاد
+🌐 {bot_name} | دریچه‌ای به دنیای آزاد
     """)
+    
+    # Format the message with bot_name
+    message = message_template.format(bot_name=bot_name)
     
     keyboard = [
         [InlineKeyboardButton("📢 عضویت در کانال", url=channel_link)],
         [InlineKeyboardButton("✅ عضو شدم", callback_data="check_channel_join")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
+
     
     # Try to edit message if callback query, otherwise send new message
     if update.callback_query:

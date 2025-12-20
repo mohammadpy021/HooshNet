@@ -230,9 +230,10 @@ textarea {
     right: 0;
     /* RTL */
     bottom: 0;
-    z-index: 50;
+    z-index: 1000;
     transition: transform var(--trans-normal);
     padding: var(--sp-lg);
+    overflow-y: auto;
 }
 
 .sidebar.active {
@@ -316,6 +317,15 @@ textarea {
     border-top: 1px solid var(--border-color);
 }
 
+.sidebar-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.5);
+    z-index: 999;
+    backdrop-filter: blur(4px);
+}
+
 /* Main Content */
 .main-content {
     flex: 1;
@@ -333,13 +343,12 @@ textarea {
     align-items: center;
     margin-bottom: var(--sp-2xl);
     padding: var(--sp-md) 0;
-    position: sticky;
-    top: 0;
-    z-index: 40;
-    background: rgba(0, 0, 0, 0.8);
-    backdrop-filter: blur(10px);
+    position: relative;
+    z-index: 10;
+    background: transparent;
     border-bottom: 1px solid transparent;
     transition: var(--trans-normal);
+    width: 100%;
 }
 
 .top-header.scrolled {
@@ -348,6 +357,11 @@ textarea {
     margin-left: calc(var(--sp-xl) * -1);
     margin-right: calc(var(--sp-xl) * -1);
     width: calc(100% + var(--sp-xl) * 2);
+}
+
+.header-title {
+    position: relative;
+    z-index: 10;
 }
 
 .header-title h1 {
@@ -365,6 +379,8 @@ textarea {
     display: flex;
     align-items: center;
     gap: var(--sp-md);
+    position: relative;
+    z-index: 10;
 }
 
 .user-profile {
@@ -377,6 +393,8 @@ textarea {
     border-radius: var(--radius-full);
     cursor: pointer;
     transition: var(--trans-fast);
+    position: relative;
+    z-index: 50;
 }
 
 .user-profile:hover {
@@ -412,11 +430,25 @@ textarea {
 
 /* Mobile Menu Toggle */
 .menu-toggle {
-    display: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     font-size: 1.5rem;
     color: var(--p-text-main);
     cursor: pointer;
     padding: var(--sp-sm);
+    width: 40px;
+    height: 40px;
+    border-radius: var(--radius-md);
+    background: var(--p-bg-card);
+    border: 1px solid var(--border-color);
+    transition: var(--trans-fast);
+}
+
+.menu-toggle:hover {
+    background: var(--p-bg-hover);
+    border-color: var(--p-red-600);
+    color: var(--p-red-600);
 }
 
 /* =====================================
@@ -696,6 +728,7 @@ textarea {
         right: 0;
         width: 280px;
         box-shadow: -5px 0 20px rgba(0, 0, 0, 0.5);
+        z-index: 1000;
     }
 
     .sidebar.active {
@@ -709,7 +742,12 @@ textarea {
     }
 
     .menu-toggle {
-        display: block;
+        display: flex;
+    }
+    
+    .top-header {
+        position: relative;
+        z-index: 1;
     }
 }
 
@@ -723,14 +761,21 @@ textarea {
         flex-direction: column-reverse;
         align-items: stretch;
         gap: var(--sp-md);
+        position: relative;
+        z-index: 1;
+        background: transparent;
     }
 
     .header-title {
         text-align: center;
+        position: relative;
+        z-index: 10;
     }
 
     .header-actions {
         justify-content: space-between;
+        position: relative;
+        z-index: 10;
     }
 
     .stats-grid {

@@ -1,0 +1,121 @@
+{% extends "reseller/layout.html" %}
+
+{% block title %}تنظیمات{% endblock %}
+{% block page_title %}تنظیمات سیستم{% endblock %}
+
+{% block content %}
+<!-- Commission Settings -->
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">
+            <i class="fa-solid fa-percent"></i>
+            تنظیمات کمیسیون
+        </h2>
+    </div>
+    <div class="form-group">
+        <label class="form-label">کمیسیون پیش‌فرض نمایندگان</label>
+        <div class="form-row">
+            <input type="number" class="form-control" id="defaultCommission" value="10" min="0" max="100" step="0.5">
+            <span class="btn btn-outline" style="white-space: nowrap; min-width: auto;">درصد</span>
+        </div>
+        <small class="text-muted" style="display: block; margin-top: 0.5rem;">
+            این مقدار برای نمایندگان جدید به عنوان کمیسیون پیش‌فرض تنظیم می‌شود.
+        </small>
+    </div>
+</div>
+
+<!-- Level Settings -->
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">
+            <i class="fa-solid fa-layer-group"></i>
+            سطوح نمایندگی
+        </h2>
+    </div>
+
+    <div class="reseller-card" style="background: rgba(255, 215, 0, 0.05); border-color: rgba(255, 215, 0, 0.2);">
+        <div class="reseller-avatar" style="background: linear-gradient(135deg, #ffd700, #ff8c00); color: #000;">
+            <i class="fa-solid fa-crown"></i>
+        </div>
+        <div class="reseller-info">
+            <div class="reseller-name">سطح طلایی</div>
+            <div class="reseller-meta">
+                <span>کمیسیون: 15%</span>
+                <span>تخفیف: 10%</span>
+            </div>
+        </div>
+        <span class="badge badge-gold">Gold</span>
+    </div>
+
+    <div class="reseller-card" style="background: rgba(192, 192, 192, 0.05); border-color: rgba(192, 192, 192, 0.2);">
+        <div class="reseller-avatar" style="background: linear-gradient(135deg, #c0c0c0, #808080); color: #000;">
+            <i class="fa-solid fa-medal"></i>
+        </div>
+        <div class="reseller-info">
+            <div class="reseller-name">سطح نقره‌ای</div>
+            <div class="reseller-meta">
+                <span>کمیسیون: 12%</span>
+                <span>تخفیف: 5%</span>
+            </div>
+        </div>
+        <span class="badge badge-silver">Silver</span>
+    </div>
+
+    <div class="reseller-card">
+        <div class="reseller-avatar">
+            <i class="fa-solid fa-user"></i>
+        </div>
+        <div class="reseller-info">
+            <div class="reseller-name">سطح استاندارد</div>
+            <div class="reseller-meta">
+                <span>کمیسیون: 10%</span>
+                <span>تخفیف: 0%</span>
+            </div>
+        </div>
+        <span class="badge badge-primary">Standard</span>
+    </div>
+</div>
+
+<!-- Payout Settings -->
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">
+            <i class="fa-solid fa-money-bill-transfer"></i>
+            تنظیمات تسویه
+        </h2>
+    </div>
+    <div class="form-group">
+        <label class="form-label">حداقل مبلغ برای درخواست تسویه</label>
+        <div class="form-row">
+            <input type="number" class="form-control" id="minPayout" value="100000" min="0" step="10000">
+            <span class="btn btn-outline" style="white-space: nowrap; min-width: auto;">تومان</span>
+        </div>
+    </div>
+    <div class="form-group mb-0">
+        <label class="form-label">روش‌های تسویه فعال</label>
+        <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
+            <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+                <input type="checkbox" checked>
+                <span>کارت به کارت</span>
+            </label>
+            <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+                <input type="checkbox">
+                <span>شبا</span>
+            </label>
+        </div>
+    </div>
+</div>
+
+<!-- Save Button -->
+<button class="btn btn-primary btn-block mt-2" onclick="saveSettings()">
+    <i class="fa-solid fa-save"></i>
+    ذخیره تنظیمات
+</button>
+
+<script>
+    function saveSettings() {
+        // TODO: Implement settings save via API
+        alert('تنظیمات با موفقیت ذخیره شد.');
+    }
+</script>
+{% endblock %}

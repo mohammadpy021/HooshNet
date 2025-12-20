@@ -198,11 +198,24 @@
         <div style="padding: 0 20px; margin-top: 30px;">
             <h3 style="margin-bottom: 16px; font-size: 1.1rem;">روش پرداخت</h3>
 
-            <!-- Hidden input to force card payment -->
-            <input type="hidden" name="payment_method" value="card">
+            <input type="hidden" name="payment_method" id="paymentMethodInput" value="card">
 
-            <div class="payment-methods">
-                <div class="payment-item selected" style="cursor: default;">
+            <div class="payment-methods" id="paymentMethods">
+                <!-- Balance Payment Option -->
+                <div class="payment-item" id="paymentBalance" onclick="selectPaymentMethod('balance', this)"
+                    style="cursor: pointer;">
+                    <div class="payment-icon"><i class="fas fa-wallet"></i></div>
+                    <div style="flex: 1; margin-right: 16px;">
+                        <div style="font-weight: 700;">پرداخت از موجودی</div>
+                        <div style="font-size: 0.85rem; color: var(--text-secondary); margin-top: 4px;">
+                            موجودی: <span id="userBalanceDisplay">0</span> تومان
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Card Payment Option -->
+                <div class="payment-item selected" id="paymentCard" onclick="selectPaymentMethod('card', this)"
+                    style="cursor: pointer;">
                     <div class="payment-icon"><i class="fas fa-credit-card"></i></div>
                     <div style="flex: 1; margin-right: 16px;">
                         <div style="font-weight: 700;">کارت به کارت</div>
@@ -265,6 +278,8 @@
     let pricePerGB = 0;
     let appliedDiscountCode = null;
     let originalPrice = 0;
+    let userBalance = 0;
+    let selectedPaymentMethod = 'card';
     let renewServiceId = {{ renew_service_id|default ('null') | tojson | safe }};
     let renewPanelId = {{ renew_panel_id|default ('null') | tojson | safe }};
     let hasSinglePanel = false;
@@ -272,6 +287,7 @@
     document.addEventListener('DOMContentLoaded', function () {
         loadPanels();
         updateNavButtons();
+        loadUserBalance();
     });
 
     // Navigation Logic
@@ -421,6 +437,10 @@
     function selectPanel(panel) {
         selectedPanel = panel;
         pricePerGB = panel.price_per_gb || 0;
+        // Store original price per GB for calculation
+        selectedPanel.original_price_per_gb = panel.original_price_per_gb || pricePerGB;
+        selectedPanel.discount_rate = panel.discount_rate || 0;
+        selectedPanel.is_discounted = panel.is_discounted || false;
 
         if (renewServiceId && renewPanelId && panel.id !== renewPanelId) {
             renewServiceId = null;
@@ -443,6 +463,7 @@
             loadCategories();
             goToStep('step2_category');
         } else {
+            // For gigabyte-only panels, go directly to volume selection
             purchaseType = 'gigabyte';
             loadVolumes();
             goToStep('step2');
@@ -548,8 +569,13 @@
                         <div style="flex:1;">
                             <div class="card-title" style="font-size:1rem;">${product.name}</div>
                             <div class="card-subtitle">${product.volume_gb} GB • ${product.duration_days} روز</div>
+                            ${product.is_discounted ?
+                            `<div style="font-size:0.8rem; color:#ef4444; text-decoration:line-through;">${product.original_price.toLocaleString('fa-IR')}</div>` : ''}
                         </div>
-                        <div style="font-weight: 800; color: var(--primary); font-size:1.1rem;">${product.price.toLocaleString('fa-IR')}</div>
+                        <div style="font-weight: 800; color: var(--primary); font-size:1.1rem;">
+                            ${product.price.toLocaleString('fa-IR')}
+                            ${product.is_discounted ? '<i class="fas fa-fire" style="color:#f59e0b; margin-right:4px; font-size:0.9rem;"></i>' : ''}
+                        </div>
                     `;
                     container.appendChild(div);
                 });
@@ -563,7 +589,9 @@
 
     function selectProduct(product) {
         selectedProduct = product;
-        originalPrice = product.price;
+        originalPrice = product.price; // This is the final price to pay (discounted if applicable)
+        // Store real original price for display
+        selectedProduct.real_original_price = product.original_price || product.price;
         if (appliedDiscountCode) removeDiscountCode();
         updatePriceDisplay();
         goToStep('step3');
@@ -576,12 +604,18 @@
 
         volumes.forEach(volume => {
             const price = volume * pricePerGB;
+            const realOriginalPrice = volume * (selectedPanel.original_price_per_gb || pricePerGB);
+            const isDiscounted = selectedPanel.is_discounted;
             const div = document.createElement('div');
             div.className = 'volume-chip';
             div.onclick = () => selectVolume(volume, price, div);
             div.innerHTML = `
                 <span class="vol-amount">${volume} <span class="vol-unit">GB</span></span>
-                <div class="vol-price">${price.toLocaleString('fa-IR')}</div>
+                <div class="vol-price">
+                    ${isDiscounted ? `<span style="font-size:0.8rem; color:rgba(255,255,255,0.5); text-decoration:line-through; display:block;">${realOriginalPrice.toLocaleString('fa-IR')}</span>` : ''}
+                    ${price.toLocaleString('fa-IR')}
+                    ${isDiscounted ? '<i class="fas fa-fire" style="color:#f59e0b; font-size:0.8rem;"></i>' : ''}
+                </div>
             `;
             container.appendChild(div);
         });
@@ -597,7 +631,11 @@
     }
 
     function selectVolume(volume, price, element) {
-        selectedVolume = { gb: volume, price: price };
+        selectedVolume = {
+            gb: volume,
+            price: price,
+            real_original_price: volume * (selectedPanel.original_price_per_gb || pricePerGB)
+        };
         originalPrice = price;
         if (appliedDiscountCode) removeDiscountCode();
 
@@ -629,13 +667,73 @@
             document.getElementById('summaryDurationRow').style.display = 'none';
         }
 
-        document.getElementById('summaryPrice').textContent = finalPrice.toLocaleString('fa-IR') + ' تومان';
+        document.getElementById('summaryPrice').innerHTML = `
+            ${(purchaseType === 'plan' && selectedProduct.is_discounted) || (purchaseType !== 'plan' && selectedPanel.is_discounted) ?
+                `<div style="font-size:0.9rem; color:rgba(255,255,255,0.5); text-decoration:line-through; margin-bottom:4px;">
+                    ${(purchaseType === 'plan' ? selectedProduct.real_original_price : selectedVolume.real_original_price).toLocaleString('fa-IR')} تومان
+                </div>` : ''}
+            ${finalPrice.toLocaleString('fa-IR')} تومان
+            ${(purchaseType === 'plan' && selectedProduct.is_discounted) || (purchaseType !== 'plan' && selectedPanel.is_discounted) ?
+                `<div style="font-size:0.8rem; color:#f59e0b; margin-top:4px;">
+                    <i class="fas fa-fire"></i> تخفیف ویژه نماینده (${purchaseType === 'plan' ? selectedProduct.discount_rate : selectedPanel.discount_rate}٪)
+                </div>` : ''}
+        `;
+
+        // Update payment options when price changes
+        updatePaymentOptions();
+    }
+
+    // Load user balance on page load
+    async function loadUserBalance() {
+        try {
+            const response = await fetch(fixUrl('/api/stats'));
+            const data = await response.json();
+            if (data.success && data.stats) {
+                userBalance = data.stats.balance || 0;
+                document.getElementById('userBalanceDisplay').textContent = userBalance.toLocaleString('fa-IR');
+                updatePaymentOptions();
+            }
+        } catch (error) {
+            console.error('Error loading balance:', error);
+        }
+    }
+
+    function updatePaymentOptions() {
+        const finalPrice = appliedDiscountCode ? appliedDiscountCode.final_amount : originalPrice;
+        const balanceItem = document.getElementById('paymentBalance');
+
+        if (!balanceItem) return;
+
+        // Remove existing warning
+        const existingWarning = balanceItem.querySelector('.insufficient-balance');
+        if (existingWarning) existingWarning.remove();
+
+        if (userBalance >= finalPrice && finalPrice > 0) {
+            balanceItem.classList.remove('disabled');
+            balanceItem.style.opacity = '1';
+            balanceItem.style.cursor = 'pointer';
+        } else {
+            balanceItem.classList.add('disabled');
+            balanceItem.style.opacity = '0.5';
+            balanceItem.style.cursor = 'not-allowed';
+            if (finalPrice > 0) {
+                const warning = document.createElement('div');
+                warning.className = 'insufficient-balance';
+                warning.style.cssText = 'font-size: 0.75rem; color: #ef4444; margin-top: 4px;';
+                warning.textContent = `موجودی ناکافی (نیاز: ${finalPrice.toLocaleString('fa-IR')} تومان)`;
+                balanceItem.querySelector('div[style*="flex: 1"]').appendChild(warning);
+            }
+        }
     }
 
     function selectPaymentMethod(method, element) {
-        document.querySelectorAll('input[name="payment_method"]').forEach(input => {
-            if (input.value === method) input.checked = true;
-        });
+        // Don't allow selection if disabled
+        if (element.classList.contains('disabled')) {
+            return;
+        }
+
+        selectedPaymentMethod = method;
+        document.getElementById('paymentMethodInput').value = method;
 
         document.querySelectorAll('.payment-item').forEach(el => {
             el.classList.remove('selected');
@@ -653,13 +751,18 @@
             element.appendChild(check);
         }
 
-        // Always show Card Details
+        // Show/hide card details based on payment method
         const cardDetails = document.getElementById('cardPaymentDetails');
         const submitBtnText = document.getElementById('submitBtnText');
 
-        cardDetails.style.display = 'block';
-        submitBtnText.textContent = 'ارسال رسید و ثبت';
-        loadCardInfo();
+        if (method === 'card') {
+            cardDetails.style.display = 'block';
+            submitBtnText.textContent = 'ارسال رسید و ثبت';
+            loadCardInfo();
+        } else {
+            cardDetails.style.display = 'none';
+            submitBtnText.textContent = 'پرداخت از موجودی';
+        }
     }
 
     async function loadCardInfo() {
@@ -732,13 +835,20 @@
         if (purchaseType === 'plan' && !selectedProduct) return showToast('محصول انتخاب نشده است', 'error');
         if (purchaseType === 'gigabyte' && !selectedVolume) return showToast('حجم انتخاب نشده است', 'error');
 
-        // Always 'card'
-        const paymentMethod = 'card';
+        const paymentMethod = selectedPaymentMethod || 'card';
+        const finalPrice = appliedDiscountCode ? appliedDiscountCode.final_amount : originalPrice;
 
-        // Validate Card Payment
-        const fileInput = document.getElementById('receiptFile');
-        if (fileInput.files.length === 0) {
-            return showToast('لطفاً تصویر رسید را انتخاب کنید', 'error');
+        // Validate payment method
+        if (paymentMethod === 'balance') {
+            if (userBalance < finalPrice) {
+                return showToast(`موجودی کافی نیست. موجودی شما: ${userBalance.toLocaleString('fa-IR')} تومان`, 'error');
+            }
+        } else if (paymentMethod === 'card') {
+            // Validate Card Payment
+            const fileInput = document.getElementById('receiptFile');
+            if (fileInput.files.length === 0) {
+                return showToast('لطفاً تصویر رسید را انتخاب کنید', 'error');
+            }
         }
 
 
@@ -767,26 +877,57 @@
             if (data.success) {
                 if (paymentMethod === 'card' && data.invoice_id) {
                     // Upload Receipt
-                    const fileInput = document.getElementById('receiptFile');
-                    const formData = new FormData();
-                    formData.append('invoice_id', data.invoice_id);
-                    formData.append('receipt', fileInput.files[0]);
+                    try {
+                        const fileInput = document.getElementById('receiptFile');
+                        if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
+                            throw new Error('فایل رسید انتخاب نشده است');
+                        }
 
-                    const uploadRes = await fetch('api/payment/upload-receipt', {
-                        method: 'POST',
-                        body: formData
-                    });
-                    const uploadData = await uploadRes.json();
+                        const formData = new FormData();
+                        formData.append('invoice_id', data.invoice_id);
+                        formData.append('receipt', fileInput.files[0]);
 
-                    if (uploadData.success) {
-                        showToast('درخواست شما با موفقیت ثبت شد', 'success');
-                        setTimeout(() => window.location.href = '/services', 2000);
-                    } else {
-                        showToast(uploadData.message || 'خطا در آپلود رسید', 'error');
+                        const uploadRes = await fetch(fixUrl('/api/payment/upload-receipt'), {
+                            method: 'POST',
+                            body: formData
+                        });
+
+                        if (!uploadRes.ok) {
+                            let errorMessage = `خطا در آپلود رسید (کد: ${uploadRes.status})`;
+                            try {
+                                const errorData = await uploadRes.json();
+                                if (errorData.message) {
+                                    errorMessage = errorData.message;
+                                }
+                            } catch (e) {
+                                // If response is not JSON, use status text
+                                errorMessage = `خطا در آپلود رسید: ${uploadRes.statusText || uploadRes.status}`;
+                            }
+                            throw new Error(errorMessage);
+                        }
+
+                        const uploadData = await uploadRes.json();
+
+                        if (uploadData.success) {
+                            showToast('درخواست شما با موفقیت ثبت شد', 'success');
+                            setTimeout(() => window.location.href = '/services', 2000);
+                        } else {
+                            showToast(uploadData.message || 'خطا در آپلود رسید', 'error');
+                            btn.disabled = false;
+                            btn.innerHTML = originalHtml;
+                        }
+                    } catch (uploadError) {
+                        console.error('Receipt upload error:', uploadError);
+                        showToast(uploadError.message || 'خطا در آپلود رسید. لطفاً دوباره تلاش کنید.', 'error');
                         btn.disabled = false;
                         btn.innerHTML = originalHtml;
+                        return; // Stop execution
                     }
 
+                } else if (paymentMethod === 'balance') {
+                    // Balance payment - service created immediately
+                    showToast('سرویس با موفقیت ایجاد شد', 'success');
+                    setTimeout(() => window.location.href = '/services', 1500);
                 } else if (data.payment_link) {
                     window.location.href = data.payment_link;
                 } else {
@@ -799,8 +940,16 @@
                 btn.innerHTML = originalHtml;
             }
         } catch (e) {
-            console.error(e);
-            showToast('خطا در ارتباط با سرور', 'error');
+            console.error('Error in submitForm:', e);
+            let errorMessage = 'خطا در ارتباط با سرور';
+            if (e.message) {
+                errorMessage = e.message;
+            } else if (e instanceof TypeError && e.message && e.message.includes('fetch')) {
+                errorMessage = 'خطا در ارتباط با سرور. لطفاً اتصال اینترنت خود را بررسی کنید.';
+            } else if (e instanceof SyntaxError) {
+                errorMessage = 'خطا در پردازش پاسخ سرور';
+            }
+            showToast(errorMessage, 'error');
             btn.disabled = false;
             btn.innerHTML = originalHtml;
         }

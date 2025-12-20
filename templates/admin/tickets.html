@@ -83,7 +83,7 @@
     <div class="grid-1" style="gap: var(--sp-md);">
         {% for ticket in tickets %}
         <div class="card ticket-card"
-            style="border-left: 4px solid {% if ticket.status == 'open' %}var(--p-success){% else %}var(--p-text-muted){% endif %}; {% if ticket.status == 'open' and (not ticket.last_reply_by or ticket.last_reply_by == ticket.user_id) %}background: rgba(251, 191, 36, 0.05); border-color: var(--p-warning);{% endif %}">
+            style="border-left: 4px solid {% if ticket.status == 'open' %}var(--p-success){% else %}var(--p-text-muted){% endif %}; {% if ticket.status == 'open' and (not ticket.last_reply_by or ticket.last_reply_by == ticket.user_id) %}background: rgba(251, 191, 36, 0.05); border-color: var(--p-warning);{% endif %}; margin-bottom: var(--sp-md); padding: var(--sp-lg); border-radius: var(--radius-lg);">
             <div
                 style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: var(--sp-md);">
                 <div style="display: flex; gap: var(--sp-md); align-items: flex-start;">

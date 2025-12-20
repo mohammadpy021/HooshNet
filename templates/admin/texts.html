@@ -119,9 +119,49 @@
 
 <script>
     async function initializeTexts() {
-        if (!confirm('آیا مطمئن هستید که می‌خواهید متن‌های پیش‌فرض را ایجاد کنید؟')) {
-            return;
-        }
+        // Show professional confirmation modal
+        const modal = document.createElement('div');
+        modal.className = 'modal-overlay';
+        modal.style.display = 'flex';
+        modal.innerHTML = `
+            <div class="modal-card">
+                <div class="card-header">
+                    <div class="card-title">
+                        <i class="fas fa-exclamation-triangle" style="color: var(--p-warning);"></i>
+                        تایید ایجاد متن‌های پیش‌فرض
+                    </div>
+                    <button onclick="this.closest('.modal-overlay').remove()" class="close-btn">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <p>آیا مطمئن هستید که می‌خواهید متن‌های پیش‌فرض را ایجاد کنید؟</p>
+                    <div class="alert alert-info" style="margin-top: var(--sp-md);">
+                        <strong>توجه:</strong> این عمل فقط متن‌هایی که در دیتابیس وجود ندارند را ایجاد می‌کند.
+                    </div>
+                </div>
+                <div style="display: flex; gap: var(--sp-md); margin-top: var(--sp-lg);">
+                    <button onclick="this.closest('.modal-overlay').remove()" class="btn btn-secondary" style="flex: 1;">
+                        لغو
+                    </button>
+                    <button onclick="confirmInitializeTexts()" class="btn btn-primary" style="flex: 2;">
+                        <i class="fas fa-database"></i>
+                        ایجاد متن‌های پیش‌فرض
+                    </button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+        modal.addEventListener('click', function(e) {
+            if (e.target === modal) {
+                modal.remove();
+            }
+        });
+    }
+
+    async function confirmInitializeTexts() {
+        // Close modal
+        document.querySelectorAll('.modal-overlay').forEach(m => m.remove());
 
         try {
             const response = await apiCall('/api/admin/texts/initialize', {
@@ -138,6 +178,7 @@
             }
         } catch (error) {
             console.error(error);
+            showToast('خطا در ایجاد متن‌ها', 'error');
         }
     }
 </script>

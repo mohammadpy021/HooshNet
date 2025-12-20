@@ -20,10 +20,16 @@
                 </div>
             </div>
 
-            <button class="btn btn-primary" onclick="showAddDiscountModal()">
-                <i class="fas fa-plus"></i>
-                <span>افزودن کد تخفیف</span>
-            </button>
+            <div style="display: flex; gap: var(--sp-sm);">
+                <button class="btn btn-primary" onclick="showAddDiscountModal()">
+                    <i class="fas fa-percent"></i>
+                    <span>افزودن کد تخفیف</span>
+                </button>
+                <button class="btn btn-success" onclick="showAddGiftCodeModal()">
+                    <i class="fas fa-gift"></i>
+                    <span>افزودن کد هدیه</span>
+                </button>
+            </div>
         </div>
     </div>
 
@@ -277,6 +283,42 @@
     </div>
 </div>
 
+<!-- Add Gift Code Modal -->
+<div id="addGiftCodeModal" class="modal-overlay">
+    <div class="modal-card">
+        <div class="card-header">
+            <div class="card-title">
+                <i class="fas fa-gift" style="color: var(--p-success);"></i>
+                افزودن کد هدیه
+            </div>
+            <button onclick="closeModal('addGiftCodeModal')" class="close-btn"><i class="fas fa-times"></i></button>
+        </div>
+        <form id="addGiftCodeForm" onsubmit="addGiftCode(event)">
+            <div class="form-group">
+                <label class="form-label">کد هدیه</label>
+                <input type="text" name="code" class="form-control" required placeholder="مثال: GIFT100">
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">مبلغ (تومان)</label>
+                    <input type="number" name="amount" class="form-control" required min="1" placeholder="100000">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">تعداد استفاده (0 = نامحدود)</label>
+                    <input type="number" name="max_uses" class="form-control" value="1" min="0" placeholder="1">
+                </div>
+            </div>
+
+            <div style="display: flex; gap: var(--sp-md); margin-top: var(--sp-lg);">
+                <button type="button" class="btn btn-secondary" onclick="closeModal('addGiftCodeModal')"
+                    style="flex: 1;">لغو</button>
+                <button type="submit" class="btn btn-success" style="flex: 2;">افزودن</button>
+            </div>
+        </form>
+    </div>
+</div>
+
 <style>
     /* Modal Styles */
     .modal-overlay {
@@ -322,6 +364,10 @@
         document.getElementById('addDiscountModal').style.display = 'flex';
     }
 
+    function showAddGiftCodeModal() {
+        document.getElementById('addGiftCodeModal').style.display = 'flex';
+    }
+
     function closeModal(id) {
         document.getElementById(id).style.display = 'none';
     }
@@ -350,9 +396,11 @@
                 body: JSON.stringify(data)
             });
             showToast('کد تخفیف با موفقیت ایجاد شد', 'success');
+            closeModal('addDiscountModal');
             setTimeout(() => window.location.reload(), 1000);
         } catch (error) {
             console.error(error);
+            showToast(error.message || 'خطا در ایجاد کد تخفیف', 'error');
         }
     }
 
@@ -396,17 +444,41 @@
         }
     }
 
+    async function addGiftCode(event) {
+        event.preventDefault();
+        const form = event.target;
+        const data = {
+            code: form.code.value,
+            amount: parseInt(form.amount.value),
+            max_uses: parseInt(form.max_uses.value) || 0
+        };
+
+        try {
+            await apiCall('/api/admin/gift-codes', {
+                method: 'POST',
+                body: JSON.stringify(data)
+            });
+            showToast('کد هدیه با موفقیت ایجاد شد', 'success');
+            closeModal('addGiftCodeModal');
+            setTimeout(() => window.location.reload(), 1000);
+        } catch (error) {
+            console.error(error);
+            showToast(error.message || 'خطا در ایجاد کد هدیه', 'error');
+        }
+    }
+
     async function deleteGiftCode(id) {
         if (!confirm('آیا از حذف این کد هدیه اطمینان دارید؟')) return;
 
         try {
-            await apiCall(`/api/admin/gift-codes/${id}`, {
+            await apiCall(`/api/admin/discounts/gift/${id}`, {
                 method: 'DELETE'
             });
             showToast('کد هدیه حذف شد', 'success');
             setTimeout(() => window.location.reload(), 1000);
         } catch (error) {
             console.error(error);
+            showToast(error.message || 'خطا در حذف کد هدیه', 'error');
         }
     }
 </script>

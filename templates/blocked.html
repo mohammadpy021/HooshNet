@@ -1,0 +1,413 @@
+{% extends "base.html" %}
+
+{% block title %}حساب کاربری مسدود شده{% endblock %}
+
+{% block content %}
+<div class="blocked-container">
+    <div class="blocked-card">
+        <!-- Animated Lock Icon -->
+        <div class="blocked-icon-container">
+            <div class="blocked-icon">
+                <i class="fas fa-user-lock"></i>
+            </div>
+            <div class="pulse-ring"></div>
+            <div class="pulse-ring delay-1"></div>
+        </div>
+
+        <!-- Header -->
+        <h1 class="blocked-title">حساب کاربری مسدود شده</h1>
+
+        <p class="blocked-subtitle">
+            متأسفانه دسترسی شما به سرویس‌های ما محدود شده است
+        </p>
+
+        <!-- Error Box -->
+        <div class="blocked-error-box">
+            <div class="error-header">
+                <i class="fas fa-exclamation-triangle"></i>
+                <span>دسترسی شما مسدود شده است</span>
+            </div>
+            <div class="error-content">
+                <p>به دلایل امنیتی یا نقض قوانین، دسترسی شما به تمامی سرویس‌ها قطع شده است.</p>
+            </div>
+        </div>
+
+        <!-- Restrictions List -->
+        <div class="restrictions-box">
+            <div class="restrictions-title">
+                <i class="fas fa-ban"></i>
+                محدودیت‌های اعمال شده
+            </div>
+            <ul class="restrictions-list">
+                <li>
+                    <i class="fas fa-times-circle"></i>
+                    <span>دسترسی به بات تلگرام غیرفعال است</span>
+                </li>
+                <li>
+                    <i class="fas fa-times-circle"></i>
+                    <span>دسترسی به وب اپلیکیشن غیرفعال است</span>
+                </li>
+                <li>
+                    <i class="fas fa-times-circle"></i>
+                    <span>تمامی سرویس‌های فعال شما غیرفعال شده‌اند</span>
+                </li>
+                <li>
+                    <i class="fas fa-times-circle"></i>
+                    <span>امکان خرید سرویس جدید وجود ندارد</span>
+                </li>
+            </ul>
+        </div>
+
+        <!-- Help Box -->
+        <div class="help-box">
+            <div class="help-icon">
+                <i class="fas fa-life-ring"></i>
+            </div>
+            <div class="help-content">
+                <h3>نیاز به کمک دارید؟</h3>
+                <p>برای بررسی وضعیت و احتمال رفع مسدودیت، با تیم پشتیبانی تماس بگیرید.</p>
+            </div>
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="blocked-actions">
+            {% if support_link %}
+            <a href="{{ support_link }}" target="_blank" class="btn btn-primary btn-lg">
+                <i class="fas fa-headset"></i>
+                تماس با پشتیبانی
+            </a>
+            {% endif %}
+            <a href="/" class="btn btn-outline btn-lg">
+                <i class="fas fa-home"></i>
+                صفحه اصلی
+            </a>
+        </div>
+
+        <!-- Footer Note -->
+        <div class="blocked-footer">
+            <i class="fas fa-shield-alt"></i>
+            <span>این اقدام برای حفظ امنیت و کیفیت سرویس انجام شده است</span>
+        </div>
+    </div>
+</div>
+
+<style>
+    .blocked-container {
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: var(--sp-xl);
+        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+        position: relative;
+        overflow: hidden;
+    }
+
+    .blocked-container::before {
+        content: '';
+        position: absolute;
+        top: -50%;
+        left: -50%;
+        width: 200%;
+        height: 200%;
+        background: radial-gradient(circle, rgba(255, 59, 48, 0.1) 0%, transparent 50%);
+        animation: rotate 20s linear infinite;
+    }
+
+    @keyframes rotate {
+        from {
+            transform: rotate(0deg);
+        }
+
+        to {
+            transform: rotate(360deg);
+        }
+    }
+
+    .blocked-card {
+        background: rgba(255, 255, 255, 0.03);
+        backdrop-filter: blur(20px);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 24px;
+        padding: var(--sp-3xl);
+        max-width: 480px;
+        width: 100%;
+        text-align: center;
+        position: relative;
+        z-index: 1;
+        box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+        animation: slideUp 0.5s ease;
+    }
+
+    @keyframes slideUp {
+        from {
+            opacity: 0;
+            transform: translateY(30px);
+        }
+
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+
+    .blocked-icon-container {
+        position: relative;
+        width: 120px;
+        height: 120px;
+        margin: 0 auto var(--sp-xl);
+    }
+
+    .blocked-icon {
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        position: relative;
+        z-index: 2;
+        box-shadow: 0 10px 30px rgba(239, 68, 68, 0.4);
+    }
+
+    .blocked-icon i {
+        font-size: 3rem;
+        color: white;
+    }
+
+    .pulse-ring {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        border: 3px solid rgba(239, 68, 68, 0.4);
+        border-radius: 50%;
+        animation: pulse 2s ease-out infinite;
+    }
+
+    .pulse-ring.delay-1 {
+        animation-delay: 1s;
+    }
+
+    @keyframes pulse {
+        0% {
+            transform: scale(1);
+            opacity: 1;
+        }
+
+        100% {
+            transform: scale(1.5);
+            opacity: 0;
+        }
+    }
+
+    .blocked-title {
+        font-size: 1.8rem;
+        font-weight: 900;
+        color: white;
+        margin-bottom: var(--sp-sm);
+    }
+
+    .blocked-subtitle {
+        font-size: 1rem;
+        color: rgba(255, 255, 255, 0.6);
+        margin-bottom: var(--sp-xl);
+        line-height: 1.6;
+    }
+
+    .blocked-error-box {
+        background: rgba(239, 68, 68, 0.15);
+        border: 1px solid rgba(239, 68, 68, 0.3);
+        border-radius: 16px;
+        padding: var(--sp-lg);
+        margin-bottom: var(--sp-lg);
+        text-align: right;
+    }
+
+    .error-header {
+        display: flex;
+        align-items: center;
+        gap: var(--sp-sm);
+        color: #ef4444;
+        font-weight: 700;
+        margin-bottom: var(--sp-sm);
+    }
+
+    .error-header i {
+        font-size: 1.25rem;
+    }
+
+    .error-content p {
+        color: rgba(255, 255, 255, 0.7);
+        font-size: 0.9rem;
+        margin: 0;
+        line-height: 1.6;
+    }
+
+    .restrictions-box {
+        background: rgba(255, 255, 255, 0.05);
+        border-radius: 16px;
+        padding: var(--sp-lg);
+        margin-bottom: var(--sp-lg);
+        text-align: right;
+    }
+
+    .restrictions-title {
+        display: flex;
+        align-items: center;
+        gap: var(--sp-sm);
+        color: white;
+        font-weight: 700;
+        margin-bottom: var(--sp-md);
+    }
+
+    .restrictions-title i {
+        color: #f59e0b;
+    }
+
+    .restrictions-list {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+    }
+
+    .restrictions-list li {
+        display: flex;
+        align-items: center;
+        gap: var(--sp-sm);
+        padding: var(--sp-sm) 0;
+        color: rgba(255, 255, 255, 0.7);
+        font-size: 0.9rem;
+    }
+
+    .restrictions-list li i {
+        color: #ef4444;
+        font-size: 0.8rem;
+    }
+
+    .help-box {
+        background: rgba(59, 130, 246, 0.1);
+        border: 1px solid rgba(59, 130, 246, 0.2);
+        border-radius: 16px;
+        padding: var(--sp-lg);
+        margin-bottom: var(--sp-xl);
+        display: flex;
+        gap: var(--sp-md);
+        align-items: flex-start;
+        text-align: right;
+    }
+
+    .help-icon {
+        width: 48px;
+        height: 48px;
+        background: rgba(59, 130, 246, 0.2);
+        border-radius: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+    }
+
+    .help-icon i {
+        color: #3b82f6;
+        font-size: 1.25rem;
+    }
+
+    .help-content {
+        flex: 1;
+    }
+
+    .help-content h3 {
+        color: white;
+        font-size: 1rem;
+        font-weight: 700;
+        margin: 0 0 var(--sp-xs);
+    }
+
+    .help-content p {
+        color: rgba(255, 255, 255, 0.6);
+        font-size: 0.85rem;
+        margin: 0;
+        line-height: 1.6;
+    }
+
+    .blocked-actions {
+        display: flex;
+        flex-direction: column;
+        gap: var(--sp-sm);
+    }
+
+    .btn-lg {
+        padding: var(--sp-md) var(--sp-xl);
+        font-size: 1rem;
+        font-weight: 700;
+        border-radius: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: var(--sp-sm);
+        transition: all 0.3s ease;
+    }
+
+    .btn-primary {
+        background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+        border: none;
+        color: white;
+        box-shadow: 0 4px 15px rgba(59, 130, 246, 0.3);
+    }
+
+    .btn-primary:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 25px rgba(59, 130, 246, 0.4);
+    }
+
+    .btn-outline {
+        background: transparent;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        color: rgba(255, 255, 255, 0.8);
+    }
+
+    .btn-outline:hover {
+        background: rgba(255, 255, 255, 0.05);
+        border-color: rgba(255, 255, 255, 0.3);
+    }
+
+    .blocked-footer {
+        margin-top: var(--sp-xl);
+        padding-top: var(--sp-lg);
+        border-top: 1px solid rgba(255, 255, 255, 0.1);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: var(--sp-sm);
+        color: rgba(255, 255, 255, 0.4);
+        font-size: 0.8rem;
+    }
+
+    .blocked-footer i {
+        color: #f59e0b;
+    }
+
+    @media (max-width: 480px) {
+        .blocked-card {
+            padding: var(--sp-xl);
+            margin: var(--sp-md);
+        }
+
+        .blocked-title {
+            font-size: 1.5rem;
+        }
+
+        .blocked-icon-container {
+            width: 100px;
+            height: 100px;
+        }
+
+        .blocked-icon i {
+            font-size: 2.5rem;
+        }
+    }
+</style>
+{% endblock %}

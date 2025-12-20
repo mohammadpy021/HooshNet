@@ -390,7 +390,8 @@
 
 /* Chat Input */
 .chat-input-wrapper {
-    position: fixed;
+    position: sticky;
+    bottom: 0;
     bottom: 0;
     left: 0;
     width: 100%;
@@ -517,7 +518,7 @@
     }
 
     .chat-input-wrapper {
-        position: sticky;
+        position: fixed;
         bottom: 0;
         background: transparent;
         padding: 20px 0;

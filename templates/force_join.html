@@ -1,0 +1,449 @@
+{% extends "base.html" %}
+
+{% block title %}عضویت در کانال{% endblock %}
+
+{% block content %}
+<div class="force-join-container">
+    <div class="force-join-card">
+        <!-- Animated Icon -->
+        <div class="join-icon-container">
+            <div class="join-icon">
+                <i class="fab fa-telegram-plane"></i>
+            </div>
+            <div class="float-ring"></div>
+            <div class="float-ring delay-1"></div>
+            <div class="float-ring delay-2"></div>
+        </div>
+
+        <!-- Header -->
+        <h1 class="join-title">عضویت در کانال الزامی است</h1>
+
+        <p class="join-subtitle">
+            برای دسترسی به سرویس‌های ما، ابتدا در کانال تلگرام ما عضو شوید
+        </p>
+
+        <!-- Benefits Box -->
+        <div class="benefits-box">
+            <div class="benefits-title">
+                <i class="fas fa-star"></i>
+                مزایای عضویت در کانال
+            </div>
+            <ul class="benefits-list">
+                <li>
+                    <i class="fas fa-bell"></i>
+                    <span>اطلاع از آخرین اخبار و به‌روزرسانی‌ها</span>
+                </li>
+                <li>
+                    <i class="fas fa-gift"></i>
+                    <span>دریافت کدهای تخفیف ویژه اعضای کانال</span>
+                </li>
+                <li>
+                    <i class="fas fa-graduation-cap"></i>
+                    <span>آموزش‌های رایگان و نکات کاربردی</span>
+                </li>
+                <li>
+                    <i class="fas fa-headset"></i>
+                    <span>پشتیبانی سریع‌تر و اولویت‌دار</span>
+                </li>
+            </ul>
+        </div>
+
+        <!-- Steps Box -->
+        <div class="steps-box">
+            <div class="steps-title">
+                <i class="fas fa-list-ol"></i>
+                مراحل فعال‌سازی
+            </div>
+            <div class="steps-list">
+                <div class="step">
+                    <div class="step-number">۱</div>
+                    <div class="step-text">روی دکمه «عضویت در کانال» کلیک کنید</div>
+                </div>
+                <div class="step">
+                    <div class="step-number">۲</div>
+                    <div class="step-text">وارد کانال شوید و عضو شوید</div>
+                </div>
+                <div class="step">
+                    <div class="step-number">۳</div>
+                    <div class="step-text">به این صفحه برگردید و تأیید کنید</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="join-actions">
+            <a href="{{ channel_link or 'https://t.me/channel' }}" target="_blank" class="btn btn-telegram btn-lg">
+                <i class="fab fa-telegram-plane"></i>
+                عضویت در کانال
+            </a>
+            <button onclick="checkMembership()" class="btn btn-success btn-lg" id="checkBtn">
+                <i class="fas fa-check-circle"></i>
+                عضو شدم
+            </button>
+        </div>
+
+        <!-- Footer Note -->
+        <div class="join-footer">
+            <i class="fas fa-info-circle"></i>
+            <span>پس از عضویت در کانال، دکمه «عضو شدم» را بزنید</span>
+        </div>
+    </div>
+</div>
+
+<style>
+    .force-join-container {
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: var(--sp-xl);
+        background: linear-gradient(135deg, #0f0f23 0%, #1a1a2e 50%, #0f3460 100%);
+        position: relative;
+        overflow: hidden;
+    }
+
+    .force-join-container::before {
+        content: '';
+        position: absolute;
+        top: -50%;
+        left: -50%;
+        width: 200%;
+        height: 200%;
+        background: radial-gradient(circle at 30% 30%, rgba(0, 136, 204, 0.15) 0%, transparent 50%);
+        animation: float 15s ease-in-out infinite;
+    }
+
+    .force-join-container::after {
+        content: '';
+        position: absolute;
+        bottom: -30%;
+        right: -30%;
+        width: 80%;
+        height: 80%;
+        background: radial-gradient(circle, rgba(99, 102, 241, 0.1) 0%, transparent 50%);
+        animation: float 20s ease-in-out infinite reverse;
+    }
+
+    @keyframes float {
+
+        0%,
+        100% {
+            transform: translate(0, 0);
+        }
+
+        50% {
+            transform: translate(30px, 30px);
+        }
+    }
+
+    .force-join-card {
+        background: rgba(255, 255, 255, 0.03);
+        backdrop-filter: blur(20px);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 24px;
+        padding: var(--sp-3xl);
+        max-width: 480px;
+        width: 100%;
+        text-align: center;
+        position: relative;
+        z-index: 1;
+        box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+        animation: slideUp 0.6s ease;
+    }
+
+    @keyframes slideUp {
+        from {
+            opacity: 0;
+            transform: translateY(40px);
+        }
+
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+
+    .join-icon-container {
+        position: relative;
+        width: 120px;
+        height: 120px;
+        margin: 0 auto var(--sp-xl);
+    }
+
+    .join-icon {
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(135deg, #0088cc 0%, #0077b6 100%);
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        position: relative;
+        z-index: 2;
+        box-shadow: 0 15px 40px rgba(0, 136, 204, 0.4);
+        animation: iconFloat 3s ease-in-out infinite;
+    }
+
+    @keyframes iconFloat {
+
+        0%,
+        100% {
+            transform: translateY(0);
+        }
+
+        50% {
+            transform: translateY(-10px);
+        }
+    }
+
+    .join-icon i {
+        font-size: 3.5rem;
+        color: white;
+    }
+
+    .float-ring {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        width: 150%;
+        height: 150%;
+        transform: translate(-50%, -50%);
+        border: 2px solid rgba(0, 136, 204, 0.3);
+        border-radius: 50%;
+        animation: ringPulse 3s ease-out infinite;
+    }
+
+    .float-ring.delay-1 {
+        animation-delay: 1s;
+    }
+
+    .float-ring.delay-2 {
+        animation-delay: 2s;
+    }
+
+    @keyframes ringPulse {
+        0% {
+            transform: translate(-50%, -50%) scale(0.8);
+            opacity: 1;
+        }
+
+        100% {
+            transform: translate(-50%, -50%) scale(1.3);
+            opacity: 0;
+        }
+    }
+
+    .join-title {
+        font-size: 1.8rem;
+        font-weight: 900;
+        color: white;
+        margin-bottom: var(--sp-sm);
+    }
+
+    .join-subtitle {
+        font-size: 1rem;
+        color: rgba(255, 255, 255, 0.6);
+        margin-bottom: var(--sp-xl);
+        line-height: 1.6;
+    }
+
+    .benefits-box {
+        background: rgba(0, 136, 204, 0.1);
+        border: 1px solid rgba(0, 136, 204, 0.2);
+        border-radius: 16px;
+        padding: var(--sp-lg);
+        margin-bottom: var(--sp-lg);
+        text-align: right;
+    }
+
+    .benefits-title {
+        display: flex;
+        align-items: center;
+        gap: var(--sp-sm);
+        color: white;
+        font-weight: 700;
+        margin-bottom: var(--sp-md);
+    }
+
+    .benefits-title i {
+        color: #fbbf24;
+    }
+
+    .benefits-list {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+    }
+
+    .benefits-list li {
+        display: flex;
+        align-items: center;
+        gap: var(--sp-sm);
+        padding: var(--sp-sm) 0;
+        color: rgba(255, 255, 255, 0.8);
+        font-size: 0.9rem;
+    }
+
+    .benefits-list li i {
+        color: #0088cc;
+        font-size: 0.9rem;
+        width: 20px;
+        text-align: center;
+    }
+
+    .steps-box {
+        background: rgba(255, 255, 255, 0.05);
+        border-radius: 16px;
+        padding: var(--sp-lg);
+        margin-bottom: var(--sp-xl);
+        text-align: right;
+    }
+
+    .steps-title {
+        display: flex;
+        align-items: center;
+        gap: var(--sp-sm);
+        color: white;
+        font-weight: 700;
+        margin-bottom: var(--sp-md);
+    }
+
+    .steps-title i {
+        color: #10b981;
+    }
+
+    .steps-list {
+        display: flex;
+        flex-direction: column;
+        gap: var(--sp-sm);
+    }
+
+    .step {
+        display: flex;
+        align-items: center;
+        gap: var(--sp-md);
+        padding: var(--sp-sm);
+        background: rgba(255, 255, 255, 0.03);
+        border-radius: 12px;
+    }
+
+    .step-number {
+        width: 32px;
+        height: 32px;
+        background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-weight: 700;
+        font-size: 0.9rem;
+        flex-shrink: 0;
+    }
+
+    .step-text {
+        color: rgba(255, 255, 255, 0.7);
+        font-size: 0.9rem;
+    }
+
+    .join-actions {
+        display: flex;
+        flex-direction: column;
+        gap: var(--sp-sm);
+    }
+
+    .btn-lg {
+        padding: var(--sp-md) var(--sp-xl);
+        font-size: 1rem;
+        font-weight: 700;
+        border-radius: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: var(--sp-sm);
+        transition: all 0.3s ease;
+        border: none;
+        cursor: pointer;
+    }
+
+    .btn-telegram {
+        background: linear-gradient(135deg, #0088cc 0%, #0077b6 100%);
+        color: white;
+        box-shadow: 0 4px 15px rgba(0, 136, 204, 0.3);
+        text-decoration: none;
+    }
+
+    .btn-telegram:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 8px 25px rgba(0, 136, 204, 0.4);
+    }
+
+    .btn-success {
+        background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+        color: white;
+        box-shadow: 0 4px 15px rgba(16, 185, 129, 0.3);
+    }
+
+    .btn-success:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 8px 25px rgba(16, 185, 129, 0.4);
+    }
+
+    .btn-success:disabled {
+        opacity: 0.7;
+        cursor: not-allowed;
+        transform: none;
+    }
+
+    .join-footer {
+        margin-top: var(--sp-xl);
+        padding-top: var(--sp-lg);
+        border-top: 1px solid rgba(255, 255, 255, 0.1);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: var(--sp-sm);
+        color: rgba(255, 255, 255, 0.4);
+        font-size: 0.85rem;
+    }
+
+    .join-footer i {
+        color: #0088cc;
+    }
+
+    @media (max-width: 480px) {
+        .force-join-card {
+            padding: var(--sp-xl);
+            margin: var(--sp-md);
+        }
+
+        .join-title {
+            font-size: 1.5rem;
+        }
+
+        .join-icon-container {
+            width: 100px;
+            height: 100px;
+        }
+
+        .join-icon i {
+            font-size: 2.5rem;
+        }
+    }
+</style>
+
+<script>
+    function checkMembership() {
+        const btn = document.getElementById('checkBtn');
+        const originalText = btn.innerHTML;
+
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> در حال بررسی...';
+
+        // Reload the page to check membership
+        setTimeout(() => {
+            window.location.reload();
+        }, 1000);
+    }
+</script>
+{% endblock %}

@@ -111,8 +111,8 @@ class ReportingSystem:
                 except BadRequest as e:
                     # If Markdown parsing fails, try without Markdown
                     try:
-                        # Remove markdown formatting for plain text
-                        plain_message = message.replace('**', '').replace('_', '').replace('`', '')
+                        # Remove markdown formatting for plain text, but preserve underscores in usernames
+                        plain_message = message.replace('**', '').replace('`', '')
                         await self.bot.send_message(
                             chat_id=self.channel_id,
                             text=plain_message

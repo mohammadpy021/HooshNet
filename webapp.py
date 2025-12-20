@@ -132,6 +132,10 @@ def parse_datetime_safe(date_value):
 app = Flask(__name__)
 # app.secret_key is set later using persistent file
 logger.info("🚀 STARTING WEBAPP - VERSION: SESSION_FIX_V2")
+
+# Configure maximum file upload size (10MB for receipts)
+app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024  # 10MB
+
 CORS(app)
 
 # Add nl2br filter for Jinja2
@@ -143,6 +147,14 @@ def nl2br_filter(value):
     return value
 
 # Add bot_prefix helper for templates (needed for single-bot mode compatibility)
+try:
+    from reseller_panel import reseller_bp
+    app.register_blueprint(reseller_bp, url_prefix='/reseller')
+except Exception as e:
+    logger.error(f"Failed to register reseller blueprint: {e}")
+    import traceback
+    logger.error(traceback.format_exc())
+
 @app.context_processor
 def inject_bot_prefix():
     def add_bot_prefix(url):
@@ -199,6 +211,21 @@ app.config['SESSION_COOKIE_NAME'] = 'vpn_bot_session'  # Custom session name
 app.config['SESSION_COOKIE_PATH'] = '/'  # Cookie valid for entire domain
 # SECURITY: Regenerate session ID on login to prevent session fixation
 app.config['SESSION_REFRESH_EACH_REQUEST'] = False  # Don't refresh on every request (performance)
+
+# Error handler for Request Entity Too Large (413)
+@app.errorhandler(413)
+def request_entity_too_large(error):
+    """Handle 413 Request Entity Too Large error"""
+    logger.warning(f"Request entity too large: {request.path}")
+    if request.is_json or request.path.startswith('/api/'):
+        return jsonify({
+            'success': False,
+            'message': 'حجم فایل ارسالی بیش از حد مجاز است. حداکثر حجم مجاز 10 مگابایت است.'
+        }), 413
+    else:
+        flash('حجم فایل ارسالی بیش از حد مجاز است. حداکثر حجم مجاز 10 مگابایت است.', 'error')
+        return redirect(request.referrer or url_for('index')), 413
+
 # Generate a secure secret key if not set (minimum 32 bytes for security)
 # Generate a secure secret key if not set (minimum 32 bytes for security)
 # CRITICAL FIX: Use a persistent secret key file so all Gunicorn workers share the same key
@@ -423,6 +450,36 @@ panel_manager = PanelManager()
 
 # Background task for syncing client data
 # NOTE: In multi-bot mode, this should be disabled as each bot has its own database
+def cleanup_old_receipts():
+    """Cleanup receipt files older than 48 hours"""
+    try:
+        import os
+        from datetime import datetime, timedelta
+        
+        receipts_dir = os.path.join(os.path.dirname(__file__), 'static', 'receipts')
+        if not os.path.exists(receipts_dir):
+            return
+        
+        cutoff_time = datetime.now() - timedelta(hours=48)
+        deleted_count = 0
+        
+        for filename in os.listdir(receipts_dir):
+            file_path = os.path.join(receipts_dir, filename)
+            if os.path.isfile(file_path):
+                file_time = datetime.fromtimestamp(os.path.getmtime(file_path))
+                if file_time < cutoff_time:
+                    try:
+                        os.remove(file_path)
+                        deleted_count += 1
+                        logger.info(f"Deleted old receipt: {filename}")
+                    except Exception as e:
+                        logger.error(f"Error deleting receipt {filename}: {e}")
+        
+        if deleted_count > 0:
+            logger.info(f"Cleaned up {deleted_count} old receipt file(s)")
+    except Exception as e:
+        logger.error(f"Error in receipt cleanup: {e}")
+
 def sync_all_clients_data():
     """OPTIMIZED: Sync all clients data from panels every 3 minutes with parallel processing and batching"""
     from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -680,6 +737,9 @@ def sync_all_clients_data():
             # Clear cache periodically
             if synced_count > 0:
                 cache.cleanup_expired()
+                
+                # Cleanup old receipts (older than 48 hours)
+                cleanup_old_receipts()
             
         except Exception as e:
             logger.error(f"Error in background sync: {e}")
@@ -887,6 +947,14 @@ def login_required(f):
             # SECURITY: Preserve bot_name in redirect
             redirect_url = url_for('index')
             return redirect(redirect_url)
+        
+        # Check if user is banned
+        user_id = session.get('user_id')
+        db_instance = get_db()
+        user = db_instance.get_user(user_id)
+        if user and user.get('is_banned', 0) == 1:
+            return redirect(url_for('blocked'))
+        
         # Ensure photo_url is available
         ensure_photo_url()
         return f(*args, **kwargs)
@@ -897,9 +965,19 @@ def admin_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
         if 'user_id' not in session:
-            # SECURITY: Preserve bot_name in redirect
-            redirect_url = url_for('index')
-            return redirect(redirect_url)
+            # SECURITY: Redirect to admin login instead of index
+            # Check for bot_name in path or session
+            bot_name = session.get('bot_name')
+            if not bot_name:
+                path_parts = request.path.split('/')
+                if len(path_parts) > 1 and path_parts[1] and not path_parts[1] in ['admin', 'static', 'auth']:
+                     # Simple heuristic, might need refinement based on your URL structure
+                     pass 
+            
+            if bot_name:
+                return redirect(url_for('admin_login', bot_name=bot_name))
+            return redirect(url_for('admin_login'))
+            
         user_id = session.get('user_id')
         db_instance = get_db()
         if not db_instance.is_admin(user_id):
@@ -952,6 +1030,20 @@ def user_photo():
         return '', 404
 
 # Routes
+@app.route('/blocked')
+def blocked():
+    """Blocked user page"""
+    bot_config = get_bot_config()
+    support_link = bot_config.get('support_link', 'https://t.me/support')
+    return render_template('blocked.html', support_link=support_link)
+
+@app.route('/force-join')
+def force_join():
+    """Force channel join page"""
+    bot_config = get_bot_config()
+    channel_link = bot_config.get('channel_link', 'https://t.me/channel')
+    return render_template('force_join.html', channel_link=channel_link)
+
 @app.route('/')
 @app.route('/<bot_name>')
 def index(bot_name=None):
@@ -963,11 +1055,43 @@ def index(bot_name=None):
         session['bot_name'] = bot_name
         
     if 'user_id' in session:
+        # Check if user is banned
+        user_id = session.get('user_id')
+        db_instance = get_db()
+        user = db_instance.get_user(user_id)
+        if user and user.get('is_banned', 0) == 1:
+            return redirect(url_for('blocked'))
+        
         logger.info(f"User {session['user_id']} already logged in, redirecting to dashboard")
+        next_url = request.args.get('next')
+        if next_url and next_url.startswith('/'):
+            return redirect(next_url)
         return redirect(url_for('dashboard'))
     bot_config = get_bot_config()
     return render_template('index.html', 
                          bot_username=bot_config['bot_username'])
+
+@app.route('/admin/login')
+@app.route('/<bot_name>/admin/login')
+def admin_login(bot_name=None):
+    """Admin Login Page"""
+    logger.info(f"Accessing ADMIN login page. Session: {dict(session)}")
+    
+    # Store bot_name in session if provided
+    if bot_name:
+        session['bot_name'] = bot_name
+        
+    if 'user_id' in session:
+        # Check if admin
+        db_instance = get_db()
+        if db_instance.is_admin(session['user_id']):
+            logger.info(f"Admin {session['user_id']} already logged in, redirecting to admin dashboard")
+            return redirect(url_for('admin_dashboard'))
+        else:
+            logger.warning(f"User {session['user_id']} is NOT admin, redirecting to user dashboard")
+            return redirect(url_for('dashboard'))
+            
+    return render_template('admin/login.html')
 
 @app.route('/auth/telegram', methods=['POST'])
 @rate_limit(max_requests=5, window_seconds=60)  # 5 attempts per minute
@@ -1059,9 +1183,14 @@ def telegram_auth():
         session['photo_url'] = photo_url
         session.permanent = True
         
+        redirect_url = url_for('dashboard')
+        next_url = auth_data.get('next')
+        if next_url and next_url.startswith('/'):
+            redirect_url = next_url
+            
         return jsonify({
             'success': True,
-            'redirect': url_for('dashboard')
+            'redirect': redirect_url
         })
     except Exception as e:
         logger.error(f"Error in Telegram auth: {e}")
@@ -1069,8 +1198,9 @@ def telegram_auth():
         return jsonify({'success': False, 'message': 'خطا در احراز هویت'}), 500
 
 @app.route('/auth/telegram-webapp', methods=['POST'])
+@app.route('/<bot_name>/auth/telegram-webapp', methods=['POST'])
 @rate_limit(max_requests=5, window_seconds=60)  # 5 attempts per minute
-def telegram_webapp_auth():
+def telegram_webapp_auth(bot_name=None):
     """Handle Telegram Web App authentication"""
     try:
         data = request.json
@@ -1116,6 +1246,15 @@ def telegram_webapp_auth():
         # Get or create user
         db_instance = get_db()
         db_user = db_instance.get_user(user_id)
+        
+        # Check if user is banned
+        if db_user and db_user.get('is_banned', 0) == 1:
+            return jsonify({
+                'success': False,
+                'message': 'حساب کاربری شما مسدود شده است',
+                'redirect': '/blocked'
+            }), 403
+        
         is_new_user = False
         if not db_user:
             is_new_user = True
@@ -1159,11 +1298,9 @@ def telegram_webapp_auth():
             # Update user info
             db_instance.update_user_info(user_id, username, first_name, last_name)
         
-        # SECURITY: Regenerate session ID to prevent session fixation attacks
-        # Clear old session and create new one
+        # SECURITY: Regenerate session ID
         old_session = dict(session)
         session.clear()
-        # Flask will automatically generate new session ID
         
         # Set session
         session['user_id'] = user_id
@@ -1172,19 +1309,86 @@ def telegram_webapp_auth():
         session['photo_url'] = photo_url
         session.permanent = True
         
-        logger.info(f"Telegram WebApp login successful for user {user_id}")
+        redirect_url = url_for('dashboard')
+        next_url = data.get('next')
+        if next_url and next_url.startswith('/'):
+            redirect_url = next_url
         
         return jsonify({
             'success': True,
-            'redirect': url_for('dashboard')
+            'redirect': redirect_url
         })
     except Exception as e:
         logger.error(f"Error in Telegram WebApp auth: {e}")
-        # SECURITY: Don't expose error details to client
+        return jsonify({'success': False, 'message': 'خطا در احراز هویت'}), 500
+
+@app.route('/auth/admin-telegram-webapp', methods=['POST'])
+@app.route('/<bot_name>/auth/admin-telegram-webapp', methods=['POST'])
+@rate_limit(max_requests=5, window_seconds=60)
+def admin_telegram_webapp_auth(bot_name=None):
+    """Handle Admin Telegram Web App authentication"""
+    try:
+        data = request.json
+        init_data = data.get('init_data')
+        user = data.get('user')
+        
+        if not user or not user.get('id'):
+            return jsonify({'success': False, 'message': 'اطلاعات کاربری نامعتبر است'}), 400
+        
+        # Verify init_data
+        verify_result = verify_telegram_webapp_data(init_data, user)
+        if not verify_result:
+            logger.warning(f"Admin WebApp auth verification failed for user {user.get('id')}")
+        
+        user_id = int(user.get('id'))
+        
+        # Check Admin Status
+        db_instance = get_db()
+        
+        # Check if user is banned (even admins can be banned)
+        db_user = db_instance.get_user(user_id)
+        if db_user and db_user.get('is_banned', 0) == 1:
+            return jsonify({
+                'success': False,
+                'message': 'حساب کاربری شما مسدود شده است',
+                'redirect': '/blocked'
+            }), 403
+        
+        if not db_instance.is_admin(user_id):
+            logger.warning(f"Unauthorized admin login attempt by user {user_id}")
+            return jsonify({'success': False, 'message': 'شما دسترسی مدیریت ندارید'}), 403
+            
+        # Proceed with login
+        username = user.get('username', '')
+        first_name = user.get('first_name', '')
+        last_name = user.get('last_name', '')
+        photo_url = user.get('photo_url', '')
+        
+        if not photo_url:
+            try:
+                photo_url = TelegramHelper.get_user_profile_photo_url_sync(user_id)
+            except:
+                pass
+                
+        # Update user info
+        db_instance.update_user_info(user_id, username, first_name, last_name)
+        
+        # Set session
+        session.clear()
+        session['user_id'] = user_id
+        session['username'] = username
+        session['first_name'] = first_name
+        session['photo_url'] = photo_url
+        session.permanent = True
+        
         return jsonify({
-            'success': False,
-            'message': 'خطا در ورود'
-        }), 500
+            'success': True,
+            'redirect': url_for('admin_dashboard')
+        })
+    except Exception as e:
+        logger.error(f"Error in Admin WebApp auth: {e}")
+        return jsonify({'success': False, 'message': 'خطا در احراز هویت مدیریت'}), 500
+
 
 @app.route('/logout')
 def logout():
@@ -2004,6 +2208,20 @@ def api_get_panels():
             # else:
             #    cache.set(panels_cache_key, panels, ttl=30)
         
+        # Calculate discounts for resellers
+        telegram_id = session.get('telegram_id')
+        discount_rate = 0
+        is_reseller = False
+        try:
+            from reseller_panel.models import ResellerManager
+            reseller_manager = ResellerManager(db_instance)
+            reseller = reseller_manager.get_reseller_by_telegram_id(telegram_id)
+            if reseller and reseller.get('discount_rate', 0) > 0:
+                discount_rate = float(reseller['discount_rate'])
+                is_reseller = True
+        except Exception as e:
+            logger.warning(f"Could not get reseller discount: {e}")
+
         # Filter and format panels
         active_panels = []
         for panel in panels:
@@ -2011,14 +2229,24 @@ def api_get_panels():
                 # Extract and translate country name
                 country_fa = extract_country_from_panel_name(panel.get('name', ''))
                 
+                price_per_gb = panel.get('price_per_gb', 0)
+                original_price_per_gb = price_per_gb
+                
+                # Apply discount
+                if is_reseller and discount_rate > 0:
+                    price_per_gb = int(original_price_per_gb * (1 - discount_rate / 100))
+                
                 active_panels.append({
                     'id': panel['id'],
                     'name': panel['name'],
-                    'price_per_gb': panel.get('price_per_gb', 0),
+                    'price_per_gb': price_per_gb,
+                    'original_price_per_gb': original_price_per_gb,
                     'description': panel.get('description', ''),
                     'location': panel.get('location', 'نامشخص'),
                     'country_fa': country_fa,
-                    'sale_type': panel.get('sale_type', 'gigabyte')
+                    'sale_type': panel.get('sale_type', 'gigabyte'),
+                    'discount_rate': discount_rate if is_reseller else 0,
+                    'is_discounted': is_reseller and discount_rate > 0
                 })
         
         return jsonify({'success': True, 'panels': active_panels})
@@ -2060,6 +2288,33 @@ def api_get_panel_products(panel_id):
             # Get products without category (when category_id is None or not provided)
             products = db_instance.get_products(panel_id, category_id=False, active_only=True)
         
+        # Calculate discounts for resellers
+        telegram_id = session.get('telegram_id')
+        discount_rate = 0
+        is_reseller = False
+        try:
+            from reseller_panel.models import ResellerManager
+            reseller_manager = ResellerManager(db_instance)
+            reseller = reseller_manager.get_reseller_by_telegram_id(telegram_id)
+            if reseller and reseller.get('discount_rate', 0) > 0:
+                discount_rate = float(reseller['discount_rate'])
+                is_reseller = True
+        except Exception as e:
+            logger.warning(f"Could not get reseller discount: {e}")
+            
+        # Add discount info to products
+        for product in products:
+            original_price = product['price']
+            product['original_price'] = original_price
+            
+            if is_reseller and discount_rate > 0:
+                product['price'] = int(original_price * (1 - discount_rate / 100))
+                product['discount_rate'] = discount_rate
+                product['is_discounted'] = True
+            else:
+                product['discount_rate'] = 0
+                product['is_discounted'] = False
+        
         return jsonify({'success': True, 'products': products})
     except Exception as e:
         logger.error(f"Error getting products: {e}")
@@ -2074,6 +2329,32 @@ def api_get_product(product_id):
         product = db_instance.get_product(product_id)
         if not product:
             return jsonify({'success': False, 'message': 'محصول یافت نشد'}), 404
+        
+        # Calculate discounts for resellers
+        telegram_id = session.get('telegram_id')
+        discount_rate = 0
+        is_reseller = False
+        try:
+            from reseller_panel.models import ResellerManager
+            reseller_manager = ResellerManager(db_instance)
+            reseller = reseller_manager.get_reseller_by_telegram_id(telegram_id)
+            if reseller and reseller.get('discount_rate', 0) > 0:
+                discount_rate = float(reseller['discount_rate'])
+                is_reseller = True
+        except Exception as e:
+            logger.warning(f"Could not get reseller discount: {e}")
+            
+        # Add discount info
+        original_price = product['price']
+        product['original_price'] = original_price
+        
+        if is_reseller and discount_rate > 0:
+            product['price'] = int(original_price * (1 - discount_rate / 100))
+            product['discount_rate'] = discount_rate
+            product['is_discounted'] = True
+        else:
+            product['discount_rate'] = 0
+            product['is_discounted'] = False
         
         return jsonify({'success': True, 'product': product})
     except Exception as e:
@@ -2107,6 +2388,20 @@ def api_calculate_price():
         if not panel:
             return jsonify({'success': False, 'message': 'پنل یافت نشد'}), 404
         
+        # Get reseller discount for current user
+        telegram_id = session.get('telegram_id')
+        discount_rate = 0
+        is_reseller = False
+        try:
+            from reseller_panel.models import ResellerManager
+            reseller_manager = ResellerManager(db_instance)
+            reseller = reseller_manager.get_reseller_by_telegram_id(telegram_id)
+            if reseller and reseller.get('discount_rate', 0) > 0:
+                discount_rate = float(reseller['discount_rate'])
+                is_reseller = True
+        except Exception as e:
+            logger.warning(f"Could not get reseller discount: {e}")
+        
         if purchase_type == 'plan':
             product_id = data.get('product_id')
             if not product_id:
@@ -2117,9 +2412,15 @@ def api_calculate_price():
             if not product:
                 return jsonify({'success': False, 'message': 'محصول یافت نشد'}), 404
             
-            total_price = product['price']
+            original_price = product['price']
             volume_gb = product['volume_gb']
             duration_days = product['duration_days']
+            
+            # Apply reseller discount
+            if is_reseller and discount_rate > 0:
+                total_price = int(original_price * (1 - discount_rate / 100))
+            else:
+                total_price = original_price
             
             return jsonify({
                 'success': True,
@@ -2127,7 +2428,10 @@ def api_calculate_price():
                 'product_id': product_id,
                 'volume_gb': volume_gb,
                 'duration_days': duration_days,
-                'total_price': total_price
+                'original_price': original_price,
+                'total_price': total_price,
+                'discount_rate': discount_rate,
+                'is_reseller': is_reseller
             })
         else:
             # Gigabyte-based purchase
@@ -2136,14 +2440,23 @@ def api_calculate_price():
                 return jsonify({'success': False, 'message': 'حجم وارد نشده است'}), 400
             
             price_per_gb = panel.get('price_per_gb', 0)
-            total_price = int(price_per_gb * volume_gb)
+            original_price = int(price_per_gb * volume_gb)
+            
+            # Apply reseller discount
+            if is_reseller and discount_rate > 0:
+                total_price = int(original_price * (1 - discount_rate / 100))
+            else:
+                total_price = original_price
             
             return jsonify({
                 'success': True,
                 'purchase_type': 'gigabyte',
                 'price_per_gb': price_per_gb,
                 'volume_gb': volume_gb,
-                'total_price': total_price
+                'original_price': original_price,
+                'total_price': total_price,
+                'discount_rate': discount_rate,
+                'is_reseller': is_reseller
             })
     except Exception as e:
         logger.error(f"Error calculating price: {e}")
@@ -2160,8 +2473,8 @@ def api_create_service():
         
         # Input validation
         panel_id = validate_panel_id(data.get('panel_id'))
-        # Force payment method to 'card'
-        payment_method = 'card'
+        # Get payment method (can be 'balance' or 'card')
+        payment_method = data.get('payment_method', 'card')
         purchase_type = data.get('purchase_type', 'gigabyte')  # 'gigabyte' or 'plan'
         
         if not panel_id:
@@ -2205,7 +2518,28 @@ def api_create_service():
             price_per_gb = panel.get('price_per_gb', 0)
             original_price = int(price_per_gb * volume_gb)
         
-        total_price = original_price
+        # Get reseller discount for current user
+        telegram_id = session.get('telegram_id')
+        discount_rate = 0
+        is_reseller = False
+        try:
+            from reseller_panel.models import ResellerManager
+            reseller_manager = ResellerManager(db_instance)
+            reseller = reseller_manager.get_reseller_by_telegram_id(telegram_id)
+            if reseller and reseller.get('discount_rate', 0) > 0:
+                discount_rate = float(reseller['discount_rate'])
+                is_reseller = True
+        except Exception as e:
+            logger.warning(f"Could not get reseller discount: {e}")
+            
+        # Apply reseller discount
+        if is_reseller and discount_rate > 0:
+            total_price = int(original_price * (1 - discount_rate / 100))
+            logger.info(f"💰 Reseller discount applied for user {user_id}: Rate={discount_rate}%, Original={original_price}, Final={total_price}")
+        else:
+            total_price = original_price
+            if is_reseller:
+                logger.info(f"ℹ️ Reseller user {user_id} has 0% discount rate")
         
         # Apply discount code if provided
         discount_code = sanitize_input(data.get('discount_code', ''), max_length=50) if data.get('discount_code') else None
@@ -4124,6 +4458,27 @@ def api_create_ticket():
     ticket_id = db_instance.create_ticket(user_db_id, subject, message, priority)
     
     if ticket_id:
+        # Send notification to admin
+        try:
+            from telegram_helper import TelegramHelper
+            bot_config = get_bot_config()
+            admin_id = bot_config.get('admin_id')
+            if admin_id:
+                notification_message = f"""🎫 **تیکت جدید ایجاد شد**
+
+🔢 تیکت: #{ticket_id}
+👤 کاربر: {user.get('first_name', 'Unknown')} {('(@' + user.get('username', '') + ')') if user.get('username') else ''}
+📝 موضوع: {subject}
+⚡ اولویت: {priority}
+
+💬 پیام:
+{message[:300]}{'...' if len(message) > 300 else ''}
+
+برای مشاهده و پاسخ، به پنل مدیریت مراجعه کنید."""
+                TelegramHelper.send_message_sync(admin_id, notification_message)
+        except Exception as e:
+            logger.error(f"Error sending ticket creation notification: {e}")
+        
         return jsonify({'success': True, 'ticket_id': ticket_id, 'message': 'تیکت با موفقیت ایجاد شد'})
     else:
         return jsonify({'success': False, 'message': 'خطا در ایجاد تیکت'}), 500
@@ -4157,9 +4512,29 @@ def api_ticket_reply():
     if ticket.get('status') != 'open':
         return jsonify({'success': False, 'message': 'این تیکت بسته شده است'}), 400
     
-    reply_id = db_instance.add_ticket_reply(ticket_id, user_db_id, message, is_admin=False)
+        reply_id = db_instance.add_ticket_reply(ticket_id, user_db_id, message, is_admin=False)
     
     if reply_id:
+        # Send notification to admin
+        try:
+            from telegram_helper import TelegramHelper
+            bot_config = get_bot_config()
+            admin_id = bot_config.get('admin_id')
+            if admin_id:
+                notification_message = f"""📩 **پاسخ جدید به تیکت**
+
+🔢 تیکت: #{ticket_id}
+👤 کاربر: {user.get('first_name', 'Unknown')}
+📝 موضوع: {ticket.get('subject', 'بدون موضوع')}
+
+💬 پاسخ کاربر:
+{message[:200]}{'...' if len(message) > 200 else ''}
+
+برای مشاهده و پاسخ، به پنل مدیریت مراجعه کنید."""
+                TelegramHelper.send_message_sync(admin_id, notification_message)
+        except Exception as e:
+            logger.error(f"Error sending ticket notification: {e}")
+        
         return jsonify({'success': True, 'message': 'پاسخ با موفقیت ارسال شد'})
     else:
         return jsonify({'success': False, 'message': 'خطا در ارسال پاسخ'}), 500
@@ -4373,7 +4748,7 @@ def admin_dashboard(bot_name=None):
             # Use COALESCE to fallback to cached_is_online if is_online is NULL
             cursor.execute('''
                 SELECT COUNT(*) as count FROM clients 
-                WHERE COALESCE(is_online, cached_is_online, 0) = 1
+                WHERE COALESCE(cached_is_online, 0) = 1
             ''')
             online_services = cursor.fetchone()['count']
             
@@ -4571,6 +4946,10 @@ def admin_user_detail(user_id):
     user = db_instance.get_user_by_id(user_id)
     if not user:
         return redirect(url_for('admin_users'))
+    
+    # Ensure is_banned is set (default to 0 if not exists)
+    if 'is_banned' not in user:
+        user['is_banned'] = 0
     
     # Check if user has photo
     try:
@@ -4907,20 +5286,30 @@ def admin_service_detail(service_id):
 @app.route('/admin/transactions')
 @admin_required
 def admin_transactions():
-    """Admin gateway transactions page"""
+    """Admin transactions page with professional implementation"""
     user_id = session.get('user_id')
     db_instance = get_db()
     user = db_instance.get_user(user_id)
     page = request.args.get('page', 1, type=int)
     search = request.args.get('search', '', type=str)
+    status_filter = request.args.get('status', 'all', type=str)  # all, successful, pending
     
-    invoices, total = db_instance.get_gateway_invoices_paginated(page=page, per_page=10, search=search if search else None)
-    total_pages = (total + 9) // 10
+    invoices, total = db_instance.get_gateway_invoices_paginated(
+        page=page, 
+        per_page=20, 
+        search=search if search else None,
+        status_filter=status_filter if status_filter != 'all' else None
+    )
+    total_pages = (total + 19) // 20
     
     # Get statistics for ALL transactions (not just current page)
     with db_instance.get_connection() as conn:
         cursor = conn.cursor(dictionary=True)
         try:
+            # Count all transactions
+            cursor.execute('SELECT COUNT(*) as count FROM invoices')
+            total_count = cursor.fetchone()['count']
+            
             # Count successful transactions - all transactions with status 'paid' or 'completed'
             cursor.execute('''
                 SELECT COUNT(*) as count FROM invoices 
@@ -4928,23 +5317,158 @@ def admin_transactions():
             ''')
             successful_count = cursor.fetchone()['count']
             
-            # Count pending transactions - all transactions with status 'pending'
+            # Count pending transactions - all transactions with status 'pending' or 'pending_approval'
             cursor.execute('''
                 SELECT COUNT(*) as count FROM invoices 
-                WHERE status = 'pending'
+                WHERE status IN ('pending', 'pending_approval')
             ''')
             pending_count = cursor.fetchone()['count']
+            
+            # Count receipts pending approval
+            cursor.execute('''
+                SELECT COUNT(*) as count FROM invoices 
+                WHERE receipt_status = 'pending_approval' OR (receipt_path IS NOT NULL AND receipt_path != '')
+            ''')
+            receipts_pending = cursor.fetchone()['count']
         finally:
             cursor.close()
     
     stats = {
+        'total': total_count,
         'successful': successful_count,
-        'pending': pending_count
+        'pending': pending_count,
+        'receipts_pending': receipts_pending
     }
     
     photo_url = session.get('photo_url', '')
     return render_template('admin/transactions.html', user=user, invoices=invoices, photo_url=photo_url,
-                         page=page, total_pages=total_pages, total=total, search=search, stats=stats)
+                         page=page, total_pages=total_pages, total=total, search=search, stats=stats, status_filter=status_filter)
+
+@app.route('/api/admin/transactions/<int:invoice_id>/receipt/approve', methods=['POST'])
+@admin_required
+def api_approve_receipt(invoice_id):
+    """Approve receipt and process payment"""
+    try:
+        db_instance = get_db()
+        invoice = db_instance.get_invoice(invoice_id)
+        
+        if not invoice:
+            return jsonify({'success': False, 'message': 'فاکتور یافت نشد'}), 404
+        
+        # Check if already approved or rejected
+        receipt_status = invoice.get('receipt_status')
+        if receipt_status == 'approved':
+            return jsonify({'success': False, 'message': 'این رسید قبلاً تایید شده است'}), 400
+        
+        if receipt_status == 'rejected':
+            return jsonify({'success': False, 'message': 'این رسید قبلاً رد شده است و امکان تغییر وجود ندارد'}), 400
+        
+        if invoice.get('status') in ['paid', 'completed']:
+            return jsonify({'success': False, 'message': 'این فاکتور قبلاً پرداخت شده است'}), 400
+        
+        # Update invoice status (only if not already approved/rejected)
+        with db_instance.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                UPDATE invoices 
+                SET status = 'paid', receipt_status = 'approved', paid_at = NOW()
+                WHERE id = %s AND receipt_status != 'approved' AND receipt_status != 'rejected'
+            ''', (invoice_id,))
+            if cursor.rowcount == 0:
+                return jsonify({'success': False, 'message': 'این رسید قبلاً تایید یا رد شده است'}), 400
+            conn.commit()
+            cursor.close()
+        
+        # Process payment (add balance or create service)
+        user = db_instance.get_user_by_id(invoice['user_id'])
+        if not user:
+            return jsonify({'success': False, 'message': 'کاربر یافت نشد'}), 404
+        
+        # Add balance to user
+        db_instance.update_user_balance(
+            user['telegram_id'], 
+            invoice['amount'], 
+            'payment_callback',
+            f'تایید پرداخت فاکتور #{invoice_id}'
+        )
+        
+        # Send notification to user
+        try:
+            from telegram_helper import TelegramHelper
+            notification_message = f"""✅ **پرداخت شما تایید شد**
+
+💰 مبلغ: {invoice['amount']:,} تومان
+🔢 شماره فاکتور: #{invoice_id}
+
+💵 موجودی شما به مبلغ {invoice['amount']:,} تومان افزایش یافت.
+
+🎉 می‌توانید از این موجودی برای خرید سرویس استفاده کنید."""
+            
+            TelegramHelper.send_message_sync(user['telegram_id'], notification_message)
+        except Exception as e:
+            logger.error(f"Error sending approval notification: {e}")
+        
+        return jsonify({'success': True, 'message': 'رسید تایید شد و موجودی کاربر افزایش یافت'})
+    except Exception as e:
+        logger.error(f"Error approving receipt: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return secure_error_response(e)
+
+@app.route('/api/admin/transactions/<int:invoice_id>/receipt/reject', methods=['POST'])
+@admin_required
+def api_reject_receipt(invoice_id):
+    """Reject receipt"""
+    try:
+        db_instance = get_db()
+        invoice = db_instance.get_invoice(invoice_id)
+        
+        if not invoice:
+            return jsonify({'success': False, 'message': 'فاکتور یافت نشد'}), 404
+        
+        # Check if already approved or rejected
+        receipt_status = invoice.get('receipt_status')
+        if receipt_status == 'approved':
+            return jsonify({'success': False, 'message': 'این رسید قبلاً تایید شده است و امکان تغییر وجود ندارد'}), 400
+        
+        if receipt_status == 'rejected':
+            return jsonify({'success': False, 'message': 'این رسید قبلاً رد شده است'}), 400
+        
+        # Update invoice status (only if not already approved/rejected)
+        with db_instance.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                UPDATE invoices 
+                SET receipt_status = 'rejected', status = 'rejected'
+                WHERE id = %s AND receipt_status != 'approved' AND receipt_status != 'rejected'
+            ''', (invoice_id,))
+            if cursor.rowcount == 0:
+                return jsonify({'success': False, 'message': 'این رسید قبلاً تایید یا رد شده است'}), 400
+            conn.commit()
+            cursor.close()
+        
+        # Send notification to user
+        try:
+            user = db_instance.get_user_by_id(invoice['user_id'])
+            if user:
+                from telegram_helper import TelegramHelper
+                notification_message = f"""❌ **رسید شما رد شد**
+
+💰 مبلغ: {invoice['amount']:,} تومان
+🔢 شماره فاکتور: #{invoice_id}
+
+⚠️ رسید پرداخت شما رد شده است. لطفاً با پشتیبانی تماس بگیرید."""
+                
+                TelegramHelper.send_message_sync(user['telegram_id'], notification_message)
+        except Exception as e:
+            logger.error(f"Error sending rejection notification: {e}")
+        
+        return jsonify({'success': True, 'message': 'رسید رد شد'})
+    except Exception as e:
+        logger.error(f"Error rejecting receipt: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return secure_error_response(e)
 
 @app.route('/api/admin/transactions/<int:invoice_id>/check-status', methods=['POST'])
 @admin_required
@@ -5513,6 +6037,25 @@ def api_admin_ticket_reply():
         
         if reply_id:
             logger.info(f"Admin {user_id} replied to ticket {ticket_id}")
+            
+            # Send notification to user
+            try:
+                from telegram_helper import TelegramHelper
+                ticket_user = db_instance.get_user_by_id(ticket.get('user_id'))
+                if ticket_user and ticket_user.get('telegram_id'):
+                    notification_message = f"""✅ **پاسخ به تیکت شما**
+
+🔢 تیکت: #{ticket_id}
+📝 موضوع: {ticket.get('subject', 'بدون موضوع')}
+
+💬 پاسخ پشتیبانی:
+{message[:200]}{'...' if len(message) > 200 else ''}
+
+برای مشاهده کامل پاسخ، به پنل کاربری مراجعه کنید."""
+                    TelegramHelper.send_message_sync(ticket_user['telegram_id'], notification_message)
+            except Exception as e:
+                logger.error(f"Error sending ticket notification to user: {e}")
+            
             return jsonify({'success': True, 'message': 'پاسخ با موفقیت ارسال شد', 'reply_id': reply_id})
         else:
             logger.error(f"Failed to add reply to ticket {ticket_id} by admin {user_id}")
@@ -5562,6 +6105,22 @@ def api_admin_close_ticket(ticket_id):
         
         if success:
             logger.info(f"Admin {user_id} closed ticket {ticket_id}")
+            
+            # Send notification to user
+            try:
+                from telegram_helper import TelegramHelper
+                ticket_user = db_instance.get_user_by_id(ticket.get('user_id'))
+                if ticket_user and ticket_user.get('telegram_id'):
+                    notification_message = f"""🔒 **تیکت شما بسته شد**
+
+🔢 تیکت: #{ticket_id}
+📝 موضوع: {ticket.get('subject', 'بدون موضوع')}
+
+تیکت شما توسط پشتیبانی بسته شده است. در صورت نیاز می‌توانید تیکت جدیدی ایجاد کنید."""
+                    TelegramHelper.send_message_sync(ticket_user['telegram_id'], notification_message)
+            except Exception as e:
+                logger.error(f"Error sending ticket close notification to user: {e}")
+            
             return jsonify({'success': True, 'message': 'تیکت با موفقیت بسته شد'})
         else:
             logger.error(f"Failed to close ticket {ticket_id} by admin {user_id}")
@@ -5704,6 +6263,11 @@ def api_admin_add_panel():
         db_instance = get_db()
         admin_mgr = AdminManager(db_instance)
         
+        # Handle default_inbound_id being empty string
+        default_inbound_id = data.get('default_inbound_id')
+        if default_inbound_id == '':
+            default_inbound_id = None
+            
         success, message = admin_mgr.add_panel(
             name=data.get('name'),
             url=data.get('url'),
@@ -5714,7 +6278,7 @@ def api_admin_add_panel():
             panel_type=data.get('panel_type', '3x-ui'),
             subscription_url=data.get('subscription_url'),
             sale_type=data.get('sale_type', 'gigabyte'),
-            default_inbound_id=data.get('default_inbound_id'),
+            default_inbound_id=default_inbound_id,
             extra_config=data.get('extra_config')
         )
         
@@ -6031,7 +6595,7 @@ def api_admin_user_info(user_id):
 @app.route('/api/admin/users/<int:user_id>/balance', methods=['POST'])
 @admin_required
 def api_admin_user_balance(user_id):
-    """Add or subtract balance from user"""
+    """Add or subtract balance from user with professional implementation"""
     try:
         data = request.get_json()
         amount = data.get('amount')
@@ -6054,27 +6618,66 @@ def api_admin_user_balance(user_id):
             new_balance = current_balance - amount
             transaction_type = 'admin_debit'
             action_desc = description or 'کسر موجودی توسط ادمین'
+            notification_message = f"""💰 **کاهش موجودی**
+
+➖ مبلغ کسر شده: {amount:,} تومان
+💵 موجودی قبلی: {current_balance:,} تومان
+💵 موجودی جدید: {new_balance:,} تومان
+
+📝 توضیحات: {action_desc}
+
+⚠️ در صورت نیاز به توضیحات بیشتر، با پشتیبانی تماس بگیرید."""
         else:
             new_balance = current_balance + amount
             transaction_type = 'admin_credit'
             action_desc = description or 'افزایش موجودی توسط ادمین'
+            notification_message = f"""💰 **افزایش موجودی**
+
+➕ مبلغ اضافه شده: {amount:,} تومان
+💵 موجودی قبلی: {current_balance:,} تومان
+💵 موجودی جدید: {new_balance:,} تومان
+
+📝 توضیحات: {action_desc}
+
+🎉 می‌توانید از این موجودی برای خرید سرویس استفاده کنید."""
         
-        # Update user balance
+        # Update user balance and create transaction in a transaction
         with db_instance.get_connection() as conn:
             cursor = conn.cursor(dictionary=True)
+            
+            # Update balance
             cursor.execute('''
                 UPDATE users 
-                SET balance = %s, updated_at = CURRENT_TIMESTAMP
+                SET balance = %s, last_activity = CURRENT_TIMESTAMP
                 WHERE id = %s
             ''', (new_balance, user_id))
             
-            # Add transaction
-            cursor.execute('''
-                INSERT INTO transactions (user_id, amount, description, transaction_type, created_at)
-                VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP)
-            ''', (user['telegram_id'], -amount if balance_type == 'subtract' else amount, action_desc, transaction_type))
+            # Add transaction record
+            try:
+                cursor.execute('''
+                    INSERT INTO transactions (user_id, amount, description, transaction_type, created_at)
+                    VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP)
+                ''', (user['telegram_id'], -amount if balance_type == 'subtract' else amount, action_desc, transaction_type))
+            except Exception as e:
+                # If transactions table doesn't exist or has different structure, use balance_transactions
+                try:
+                    cursor.execute('''
+                        INSERT INTO balance_transactions (user_id, amount, transaction_type, description, created_at)
+                        VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP)
+                    ''', (user_id, -amount if balance_type == 'subtract' else amount, transaction_type, action_desc))
+                except Exception:
+                    pass  # If both fail, continue without transaction log
             
             conn.commit()
+            cursor.close()
+        
+        # Send notification to user via Telegram
+        try:
+            from telegram_helper import TelegramHelper
+            TelegramHelper.send_message_sync(user['telegram_id'], notification_message)
+        except Exception as e:
+            logger.error(f"Error sending balance notification to user {user['telegram_id']}: {e}")
+            # Don't fail the request if notification fails
         
         message = f'{amount:,} تومان به موجودی کاربر اضافه شد' if balance_type == 'add' else f'{amount:,} تومان از موجودی کاربر کسر شد'
         return jsonify({'success': True, 'message': message, 'new_balance': new_balance})
@@ -6084,10 +6687,390 @@ def api_admin_user_balance(user_id):
         logger.error(traceback.format_exc())
         return secure_error_response(e)
 
+# ==================== SERVICE MANAGEMENT API ROUTES ====================
+
+@app.route('/api/services/<int:service_id>/config', methods=['GET'])
+def api_get_service_config(service_id):
+    """Get service configuration link"""
+    try:
+        user_id = session.get('user_id')
+        if not user_id:
+            return jsonify({'success': False, 'message': 'لطفاً ابتدا وارد شوید'}), 401
+            
+        db_instance = get_db()
+        user = db_instance.get_user(user_id)
+        service = db_instance.get_client_by_id(service_id)
+        
+        if not service:
+            return jsonify({'success': False, 'message': 'سرویس یافت نشد'}), 404
+            
+        # Check ownership or admin status
+        if service['user_id'] != user.get('id') and not user.get('is_admin'):
+            return jsonify({'success': False, 'message': 'دسترسی غیرمجاز'}), 403
+            
+        from admin_manager import AdminManager
+        admin_mgr = AdminManager(db_instance)
+        panel_mgr = admin_mgr.get_panel_manager(service['panel_id'])
+        
+        if not panel_mgr:
+            return jsonify({'success': False, 'message': 'پنل یافت نشد'}), 404
+            
+        # Get config link - pass client_name for Rebecca/Marzban panels that use username
+        config = panel_mgr.get_client_config_link(
+            service['inbound_id'],
+            service.get('client_name') or service['client_uuid'],
+            service['protocol']
+        )
+        
+        if config:
+            return jsonify({'success': True, 'config': config})
+        else:
+            return jsonify({'success': False, 'message': 'خطا در دریافت لینک اتصال'}), 500
+            
+    except Exception as e:
+        logger.error(f"Error getting service config: {e}")
+        return secure_error_response(e)
+
+@app.route('/api/admin/services/<int:service_id>/volume', methods=['POST'])
+@admin_required
+def api_admin_service_volume(service_id):
+    """Add volume to service"""
+    try:
+        data = request.json
+        volume_gb = data.get('volume_gb')
+        
+        if not volume_gb or volume_gb <= 0:
+            return jsonify({'success': False, 'message': 'مقدار حجم نامعتبر است'}), 400
+            
+        db_instance = get_db()
+        service = db_instance.get_client_by_id(service_id)
+        
+        if not service:
+            return jsonify({'success': False, 'message': 'سرویس یافت نشد'}), 404
+            
+        from admin_manager import AdminManager
+        admin_mgr = AdminManager(db_instance)
+        panel_mgr = admin_mgr.get_panel_manager(service['panel_id'])
+        
+        if not panel_mgr or not panel_mgr.login():
+            return jsonify({'success': False, 'message': 'خطا در اتصال به پنل'}), 500
+            
+        # Get current client details to know current total (use client_name for Rebecca)
+        client = panel_mgr.get_client_details(
+            service['inbound_id'], 
+            service['client_uuid'],
+            client_name=service.get('client_name')
+        )
+        if not client:
+            return jsonify({'success': False, 'message': 'کاربر در پنل یافت نشد'}), 404
+            
+        # Get current total - handle different formats:
+        # - 3x-ui returns 'totalGB' in bytes (or 'total' in bytes)
+        # - Rebecca/Marzban return 'total_traffic' in bytes
+        current_total_bytes = 0
+        if 'totalGB' in client and client['totalGB']:
+            current_total_bytes = client['totalGB']  # Usually in bytes despite the name
+        elif 'total_traffic' in client and client['total_traffic']:
+            current_total_bytes = client['total_traffic']  # Bytes
+        elif 'data_limit' in client and client['data_limit']:
+            current_total_bytes = client['data_limit']  # Bytes
+        
+        # Add new volume (convert GB to bytes)
+        new_volume_bytes = volume_gb * 1024 * 1024 * 1024
+        new_total_bytes = current_total_bytes + new_volume_bytes
+        
+        logger.info(f"Volume addition: current={current_total_bytes} bytes, adding={new_volume_bytes} bytes, new_total={new_total_bytes} bytes")
+        
+        # Update in panel (pass client_name for Rebecca)
+        if panel_mgr.update_client(
+            service['inbound_id'],
+            service['client_uuid'],
+            total_gb=new_total_bytes,
+            client_name=service.get('client_name')
+        ):
+            # Update in DB - convert bytes back to GB for database
+            new_total_gb = new_total_bytes / (1024 * 1024 * 1024)
+            db_instance.update_client_total_gb(service_id, new_total_gb)
+            return jsonify({'success': True, 'message': 'حجم با موفقیت اضافه شد'})
+        else:
+            return jsonify({'success': False, 'message': 'خطا در بروزرسانی پنل'}), 500
+            
+    except Exception as e:
+        logger.error(f"Error adding volume: {e}")
+        return secure_error_response(e)
+
+@app.route('/api/admin/services/<int:service_id>/renew', methods=['POST'])
+@admin_required
+def api_admin_service_renew(service_id):
+    """Renew service (extend expiry)"""
+    try:
+        data = request.json
+        days = data.get('days')
+        
+        if not days or days <= 0:
+            return jsonify({'success': False, 'message': 'تعداد روز نامعتبر است'}), 400
+            
+        db_instance = get_db()
+        service = db_instance.get_client_by_id(service_id)
+        
+        if not service:
+            return jsonify({'success': False, 'message': 'سرویس یافت نشد'}), 404
+            
+        from admin_manager import AdminManager
+        admin_mgr = AdminManager(db_instance)
+        panel_mgr = admin_mgr.get_panel_manager(service['panel_id'])
+        
+        if not panel_mgr or not panel_mgr.login():
+            return jsonify({'success': False, 'message': 'خطا در اتصال به پنل'}), 500
+            
+        # Get current client details (use client_name for Rebecca)
+        client = panel_mgr.get_client_details(
+            service['inbound_id'], 
+            service['client_uuid'],
+            client_name=service.get('client_name')
+        )
+        if not client:
+            return jsonify({'success': False, 'message': 'کاربر در پنل یافت نشد'}), 404
+            
+        # Calculate new expiry
+        import time
+        current_expiry = client.get('expiryTime', 0)
+        now_ms = int(time.time() * 1000)
+        
+        # If expired or no expiry, start from now. If active, add to current expiry.
+        if current_expiry <= 0 or current_expiry < now_ms:
+            base_time = now_ms
+        else:
+            base_time = current_expiry
+            
+        new_expiry = base_time + (days * 24 * 60 * 60 * 1000)
+        
+        # Update in panel (pass client_name for Rebecca)
+        if panel_mgr.update_client(
+            service['inbound_id'],
+            service['client_uuid'],
+            expiry_time=new_expiry,
+            client_name=service.get('client_name')
+        ):
+            # Update expiry in DB directly
+            from datetime import datetime
+            expires_at = datetime.fromtimestamp(new_expiry / 1000) if new_expiry > 1000000000000 else datetime.fromtimestamp(new_expiry)
+            with db_instance.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    UPDATE clients 
+                    SET expires_at = %s, 
+                        status = 'active',
+                        is_active = 1,
+                        warned_expired = 0,
+                        warned_three_days = 0,
+                        warned_one_week = 0,
+                        expired_at = NULL,
+                        deletion_grace_period_end = NULL,
+                        updated_at = CURRENT_TIMESTAMP 
+                    WHERE id = %s
+                ''', (expires_at, service_id))
+                conn.commit()
+            return jsonify({'success': True, 'message': 'سرویس با موفقیت تمدید شد'})
+        else:
+            return jsonify({'success': False, 'message': 'خطا در بروزرسانی پنل'}), 500
+            
+    except Exception as e:
+        logger.error(f"Error renewing service: {e}")
+        return secure_error_response(e)
+
+@app.route('/api/admin/services/<int:service_id>', methods=['DELETE'])
+@admin_required
+def api_admin_delete_service(service_id):
+    """Delete service"""
+    try:
+        db_instance = get_db()
+        service = db_instance.get_client_by_id(service_id)
+        
+        if not service:
+            return jsonify({'success': False, 'message': 'سرویس یافت نشد'}), 404
+            
+        from admin_manager import AdminManager
+        admin_mgr = AdminManager(db_instance)
+        panel_mgr = admin_mgr.get_panel_manager(service['panel_id'])
+        
+        # Try to delete from panel first (use client_name for Rebecca)
+        panel_deleted = False
+        client_identifier = service.get('client_name') or service['client_uuid']
+        if panel_mgr and panel_mgr.login():
+            if panel_mgr.delete_client(service['inbound_id'], client_identifier):
+                panel_deleted = True
+            else:
+                logger.warning(f"Failed to delete client {client_identifier} from panel")
+        
+        # Delete from DB regardless of panel result (force delete)
+        if db_instance.delete_client(service_id):
+            msg = 'سرویس با موفقیت حذف شد'
+            if not panel_deleted:
+                msg += ' (اما حذف از پنل با خطا مواجه شد)'
+            return jsonify({'success': True, 'message': msg})
+        else:
+            return jsonify({'success': False, 'message': 'خطا در حذف سرویس از دیتابیس'}), 500
+            
+    except Exception as e:
+        logger.error(f"Error deleting service: {e}")
+        return secure_error_response(e)
+
+
+@app.route('/api/admin/users/<int:user_id>/ban', methods=['PUT'])
+@admin_required
+def api_admin_ban_user(user_id):
+    """Ban or unban user with professional implementation"""
+    try:
+        data = request.get_json()
+        is_banned = data.get('is_banned', False)
+        
+        db_instance = get_db()
+        user = db_instance.get_user_by_id(user_id)
+        if not user:
+            return jsonify({'success': False, 'message': 'کاربر یافت نشد'}), 404
+        
+        # Update ban status
+        with db_instance.get_connection() as conn:
+            cursor = conn.cursor(dictionary=True)
+            cursor.execute('''
+                UPDATE users 
+                SET is_banned = %s, last_activity = CURRENT_TIMESTAMP
+                WHERE id = %s
+            ''', (1 if is_banned else 0, user_id))
+            conn.commit()
+            cursor.close()
+        
+        # Send notification to user
+        try:
+            from telegram_helper import TelegramHelper
+            if is_banned:
+                notification_message = f"""🚫 **حساب کاربری شما مسدود شده است**
+
+متأسفانه دسترسی شما به سرویس‌های ما به دلایل امنیتی یا نقض قوانین قطع شده است.
+
+⚠️ **توجه:**
+• دسترسی به بات و وب اپ غیرفعال است
+• سرویس‌های فعال شما غیرفعال شده‌اند
+• برای رفع مسدودیت با پشتیبانی تماس بگیرید
+
+📞 برای اطلاعات بیشتر با پشتیبانی تماس بگیرید."""
+            else:
+                notification_message = f"""✅ **حساب کاربری شما فعال شد**
+
+دسترسی شما به سرویس‌های ما بازگردانده شده است.
+
+🎉 می‌توانید از تمام امکانات استفاده کنید."""
+            
+            TelegramHelper.send_message_sync(user['telegram_id'], notification_message)
+        except Exception as e:
+            logger.error(f"Error sending ban notification to user {user['telegram_id']}: {e}")
+        
+        message = 'کاربر با موفقیت مسدود شد' if is_banned else 'رفع مسدودیت با موفقیت انجام شد'
+        return jsonify({'success': True, 'message': message})
+    except Exception as e:
+        logger.error(f"Error banning user: {e}")
+        return secure_error_response(e)
+
+@app.route('/api/admin/users/<int:user_id>', methods=['DELETE'])
+@admin_required
+def api_admin_delete_user(user_id):
+    """Delete user with professional implementation"""
+    try:
+        db_instance = get_db()
+        user = db_instance.get_user_by_id(user_id)
+        if not user:
+            return jsonify({'success': False, 'message': 'کاربر یافت نشد'}), 404
+        
+        # Prevent deleting admin users
+        if user.get('is_admin', 0) == 1:
+            return jsonify({'success': False, 'message': 'نمی‌توانید کاربر ادمین را حذف کنید'}), 400
+        
+        telegram_id = user.get('telegram_id')
+        
+        # Delete user and all related data (cascade will handle related records)
+        with db_instance.get_connection() as conn:
+            cursor = conn.cursor()
+            
+            # Delete user services/clients first
+            cursor.execute('DELETE FROM clients WHERE user_id = %s', (telegram_id,))
+            
+            # Delete transactions
+            try:
+                cursor.execute('DELETE FROM transactions WHERE user_id = %s', (telegram_id,))
+            except Exception:
+                pass
+            
+            try:
+                cursor.execute('DELETE FROM balance_transactions WHERE user_id = %s', (user_id,))
+            except Exception:
+                pass
+            
+            # Delete tickets
+            try:
+                cursor.execute('DELETE FROM tickets WHERE user_id = %s', (user_id,))
+            except Exception:
+                pass
+            
+            # Delete user
+            cursor.execute('DELETE FROM users WHERE id = %s', (user_id,))
+            
+            conn.commit()
+            cursor.close()
+        
+        logger.info(f"User {user_id} (telegram_id: {telegram_id}) deleted by admin")
+        
+        return jsonify({'success': True, 'message': 'کاربر با موفقیت حذف شد'})
+    except Exception as e:
+        logger.error(f"Error deleting user: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return secure_error_response(e)
+
+@app.route('/api/admin/users/<int:user_id>/message', methods=['POST'])
+@admin_required
+def api_admin_send_message(user_id):
+    """Send personal message to user"""
+    try:
+        data = request.get_json()
+        message_text = data.get('message', '').strip()
+        
+        if not message_text:
+            return jsonify({'success': False, 'message': 'متن پیام نمی‌تواند خالی باشد'}), 400
+        
+        db_instance = get_db()
+        user = db_instance.get_user_by_id(user_id)
+        if not user:
+            return jsonify({'success': False, 'message': 'کاربر یافت نشد'}), 404
+        
+        # Send message via Telegram
+        try:
+            from telegram_helper import TelegramHelper
+            admin_user = db_instance.get_user(session.get('user_id'))
+            admin_name = admin_user.get('first_name', 'مدیر') if admin_user else 'مدیر'
+            
+            notification_message = f"""📩 **پیام از مدیریت**
+
+{message_text}
+
+👤 از طرف: {admin_name}
+
+💬 در صورت نیاز به پاسخ، با پشتیبانی تماس بگیرید."""
+            
+            TelegramHelper.send_message_sync(user['telegram_id'], notification_message)
+        except Exception as e:
+            logger.error(f"Error sending message to user {user['telegram_id']}: {e}")
+            return jsonify({'success': False, 'message': f'خطا در ارسال پیام: {str(e)}'}), 500
+        
+        return jsonify({'success': True, 'message': 'پیام با موفقیت ارسال شد'})
+    except Exception as e:
+        logger.error(f"Error sending message: {e}")
+        return secure_error_response(e)
+
 @app.route('/api/admin/users/gift-all', methods=['POST'])
 @admin_required
 def api_admin_gift_all_users():
-    """Gift balance to all users"""
+    """Gift balance to all users with professional implementation and notifications"""
     try:
         data = request.json
         amount = int(data.get('amount', 0))
@@ -6100,12 +7083,38 @@ def api_admin_gift_all_users():
         success_count = 0
         failed_count = 0
         
+        from telegram_helper import TelegramHelper
+        
         for user in all_users:
             try:
+                # Skip banned users
+                if user.get('is_banned', 0) == 1:
+                    continue
+                
+                # Update balance
                 db_instance.update_user_balance(user['telegram_id'], amount, 'gift', f'هدیه همگانی: {amount:,} تومان')
+                
+                # Get new balance
+                new_balance = (user.get('balance', 0) or 0) + amount
+                
+                # Send notification
+                notification_message = f"""🎁 **هدیه همگانی از مدیریت**
+
+💰 مبلغ هدیه: {amount:,} تومان
+💵 موجودی جدید: {new_balance:,} تومان
+
+🎉 می‌توانید از این موجودی برای خرید سرویس استفاده کنید.
+
+🔹 برای خرید سرویس از منوی اصلی استفاده کنید."""
+                
+                try:
+                    TelegramHelper.send_message_sync(user['telegram_id'], notification_message)
+                except Exception as e:
+                    logger.error(f"Error sending gift notification to user {user['telegram_id']}: {e}")
+                
                 success_count += 1
             except Exception as e:
-                logger.error(f"Error gifting to user {user['telegram_id']}: {e}")
+                logger.error(f"Error gifting to user {user.get('telegram_id', 'unknown')}: {e}")
                 failed_count += 1
         
         return jsonify({
@@ -6118,22 +7127,131 @@ def api_admin_gift_all_users():
         logger.error(f"Error gifting all users: {e}")
         return secure_error_response(e)
 
+@app.route('/api/admin/broadcast/count', methods=['POST'])
+@admin_required
+def api_admin_broadcast_count():
+    """Get user count for broadcast filter"""
+    try:
+        data = request.json
+        user_filter = data.get('filter', 'all')
+        
+        db_instance = get_db()
+        count = 0
+        
+        if user_filter == 'all':
+            # All users (excluding banned)
+            all_users = db_instance.get_all_users()
+            count = len([u for u in all_users if u.get('is_banned', 0) == 0])
+        elif user_filter == 'active':
+            # Users with active services
+            with db_instance.get_connection() as conn:
+                cursor = conn.cursor(dictionary=True)
+                cursor.execute('''
+                    SELECT DISTINCT u.telegram_id 
+                    FROM users u
+                    INNER JOIN clients c ON u.telegram_id = c.user_id
+                    WHERE c.is_active = 1 
+                    AND c.expires_at > NOW()
+                    AND u.is_banned = 0
+                ''')
+                count = len(cursor.fetchall())
+                cursor.close()
+        elif user_filter == 'inactive':
+            # Users with expired services or no active services
+            with db_instance.get_connection() as conn:
+                cursor = conn.cursor(dictionary=True)
+                cursor.execute('''
+                    SELECT DISTINCT u.telegram_id 
+                    FROM users u
+                    LEFT JOIN clients c ON u.telegram_id = c.user_id AND c.is_active = 1 AND c.expires_at > NOW()
+                    WHERE c.id IS NULL
+                    AND u.is_banned = 0
+                ''')
+                count = len(cursor.fetchall())
+                cursor.close()
+        elif user_filter == 'no_purchase':
+            # Users with no purchases (no invoices)
+            with db_instance.get_connection() as conn:
+                cursor = conn.cursor(dictionary=True)
+                cursor.execute('''
+                    SELECT DISTINCT u.telegram_id 
+                    FROM users u
+                    LEFT JOIN invoices i ON u.telegram_id = i.user_id AND i.status IN ('paid', 'completed')
+                    WHERE i.id IS NULL
+                    AND u.is_banned = 0
+                ''')
+                count = len(cursor.fetchall())
+                cursor.close()
+        
+        return jsonify({'success': True, 'count': count})
+    except Exception as e:
+        logger.error(f"Error getting broadcast count: {e}")
+        return secure_error_response(e)
+
 @app.route('/api/admin/broadcast', methods=['POST'])
 @admin_required
 def api_admin_broadcast():
-    """Broadcast message to all users"""
+    """Broadcast message to users with professional filter implementation"""
     try:
         data = request.json
         message = data.get('message', '')
-        broadcast_type = data.get('type', 'message')  # 'message' or 'forward'
+        user_filter = data.get('filter', 'all')
+        broadcast_type = data.get('type', 'message')
         
         if not message and broadcast_type == 'message':
             return jsonify({'success': False, 'message': 'پیام نمی‌تواند خالی باشد'}), 400
         
-        user_ids = db.get_all_users_telegram_ids()
+        db_instance = get_db()
+        user_ids = []
+        
+        # Get users based on filter
+        if user_filter == 'all':
+            # All users (excluding banned)
+            all_users = db_instance.get_all_users()
+            user_ids = [u['telegram_id'] for u in all_users if u.get('is_banned', 0) == 0]
+        elif user_filter == 'active':
+            # Users with active services
+            with db_instance.get_connection() as conn:
+                cursor = conn.cursor(dictionary=True)
+                cursor.execute('''
+                    SELECT DISTINCT u.telegram_id 
+                    FROM users u
+                    INNER JOIN clients c ON u.telegram_id = c.user_id
+                    WHERE c.is_active = 1 
+                    AND c.expires_at > NOW()
+                    AND u.is_banned = 0
+                ''')
+                user_ids = [row['telegram_id'] for row in cursor.fetchall()]
+                cursor.close()
+        elif user_filter == 'inactive':
+            # Users with expired services or no active services
+            with db_instance.get_connection() as conn:
+                cursor = conn.cursor(dictionary=True)
+                cursor.execute('''
+                    SELECT DISTINCT u.telegram_id 
+                    FROM users u
+                    LEFT JOIN clients c ON u.telegram_id = c.user_id AND c.is_active = 1 AND c.expires_at > NOW()
+                    WHERE c.id IS NULL
+                    AND u.is_banned = 0
+                ''')
+                user_ids = [row['telegram_id'] for row in cursor.fetchall()]
+                cursor.close()
+        elif user_filter == 'no_purchase':
+            # Users with no purchases (no invoices)
+            with db_instance.get_connection() as conn:
+                cursor = conn.cursor(dictionary=True)
+                cursor.execute('''
+                    SELECT DISTINCT u.telegram_id 
+                    FROM users u
+                    LEFT JOIN invoices i ON u.telegram_id = i.user_id AND i.status IN ('paid', 'completed')
+                    WHERE i.id IS NULL
+                    AND u.is_banned = 0
+                ''')
+                user_ids = [row['telegram_id'] for row in cursor.fetchall()]
+                cursor.close()
         
         if not user_ids:
-            return jsonify({'success': False, 'message': 'هیچ کاربری یافت نشد'}), 400
+            return jsonify({'success': False, 'message': 'هیچ کاربری با فیلتر انتخابی یافت نشد'}), 400
         
         # Send broadcast via Telegram bot
         from telegram_helper import TelegramHelper
@@ -6153,14 +7271,23 @@ def api_admin_broadcast():
                 logger.error(f"Error broadcasting to user {user_id}: {e}")
                 failed_count += 1
         
+        filter_names = {
+            'all': 'همه کاربران',
+            'active': 'کاربران فعال',
+            'inactive': 'کاربران غیرفعال',
+            'no_purchase': 'بدون خرید'
+        }
+        
         return jsonify({
             'success': True,
-            'message': f'پیام به {success_count} کاربر ارسال شد',
+            'message': f'پیام به {success_count} کاربر ({filter_names.get(user_filter, user_filter)}) ارسال شد',
             'success_count': success_count,
             'failed_count': failed_count
         })
     except Exception as e:
         logger.error(f"Error broadcasting: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
         return secure_error_response(e)
 
 @app.route('/api/admin/discounts', methods=['POST'])
@@ -6169,9 +7296,14 @@ def api_admin_create_discount():
     """Create discount code"""
     try:
         data = request.json
-        user_id = session.get('user_id')
+        user_telegram_id = session.get('user_id')
         
-        code_id = db.create_discount_code(
+        # Get internal user database ID from telegram_id
+        db_instance = get_db()
+        user = db_instance.get_user(user_telegram_id)
+        user_db_id = user.get('id') if user else None
+        
+        code_id = db_instance.create_discount_code(
             code=data.get('code'),
             discount_type=data.get('discount_type', 'percentage'),
             discount_value=float(data.get('discount_value', 0)),
@@ -6180,7 +7312,7 @@ def api_admin_create_discount():
             max_uses=data.get('max_uses', 0),
             valid_from=data.get('valid_from'),
             valid_until=data.get('valid_until'),
-            created_by=user_id
+            created_by=user_db_id
         )
         
         if code_id:
@@ -6190,6 +7322,7 @@ def api_admin_create_discount():
     except Exception as e:
         logger.error(f"Error creating discount code: {e}")
         return secure_error_response(e)
+
 
 @app.route('/api/admin/discounts/<int:code_id>', methods=['PUT'])
 @admin_required
@@ -6227,17 +7360,13 @@ def api_admin_update_discount(code_id):
 @app.route('/api/admin/discounts/<int:code_id>', methods=['DELETE'])
 @admin_required
 def api_admin_delete_discount(code_id):
-    """Delete discount code"""
+    """Delete discount code permanently"""
     try:
-        with db.get_connection() as conn:
-            cursor = conn.cursor(dictionary=True)
-            try:
-                cursor.execute('UPDATE discount_codes SET is_active = 0 WHERE id = %s', (code_id,))
-                conn.commit()
-            finally:
-                cursor.close()
-            
+        db_instance = get_db()
+        if db_instance.delete_discount_code(code_id):
             return jsonify({'success': True, 'message': 'کد تخفیف با موفقیت حذف شد'})
+        else:
+            return jsonify({'success': False, 'message': 'خطا در حذف کد تخفیف'}), 400
     except Exception as e:
         logger.error(f"Error deleting discount code: {e}")
         return secure_error_response(e)
@@ -6278,19 +7407,40 @@ def api_admin_update_gift_code(code_id):
 @app.route('/api/admin/discounts/gift/<int:code_id>', methods=['DELETE'])
 @admin_required
 def api_admin_delete_gift_code(code_id):
-    """Delete gift code"""
+    """Delete gift code permanently"""
     try:
-        with db.get_connection() as conn:
-            cursor = conn.cursor(dictionary=True)
-            try:
-                cursor.execute('UPDATE gift_codes SET is_active = 0 WHERE id = %s', (code_id,))
-                conn.commit()
-            finally:
-                cursor.close()
-            
+        db_instance = get_db()
+        if db_instance.delete_gift_code(code_id):
             return jsonify({'success': True, 'message': 'کد هدیه با موفقیت حذف شد'})
+        else:
+            return jsonify({'success': False, 'message': 'خطا در حذف کد هدیه'}), 400
     except Exception as e:
         logger.error(f"Error deleting gift code: {e}")
+        return secure_error_response(e)
+
+@app.route('/api/admin/gift-codes', methods=['POST'])
+@admin_required
+def api_admin_create_gift_code():
+    """Create gift code"""
+    try:
+        data = request.json
+        user_id = session.get('user_id')
+        
+        code_id = db.create_gift_code(
+            code=data.get('code'),
+            amount=int(data.get('amount', 0)),
+            max_uses=int(data.get('max_uses', 1)),
+            created_by=user_id
+        )
+        
+        if code_id:
+            return jsonify({'success': True, 'message': 'کد هدیه با موفقیت ایجاد شد', 'code_id': code_id})
+        else:
+            return jsonify({'success': False, 'message': 'خطا در ایجاد کد هدیه'}), 400
+    except Exception as e:
+        logger.error(f"Error creating gift code: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
         return secure_error_response(e)
 
 @app.route('/api/admin/products/panel/<int:panel_id>/categories', methods=['GET'])
@@ -6599,6 +7749,10 @@ def api_payment_card_info():
 def api_payment_upload_receipt():
     """Upload payment receipt"""
     try:
+        import os  # Import os at the beginning of the function
+        from datetime import datetime
+        from werkzeug.utils import secure_filename
+        
         db = get_db()
         user_id = session.get('user_id')
         if 'receipt' not in request.files:
@@ -6607,6 +7761,19 @@ def api_payment_upload_receipt():
         file = request.files['receipt']
         if file.filename == '':
             return jsonify({'success': False, 'message': 'نام فایل نامعتبر است'}), 400
+        
+        # Check file size (max 10MB)
+        file.seek(0, 2)  # Seek to end
+        file_size = file.tell()
+        file.seek(0)  # Reset to beginning
+        if file_size > 10 * 1024 * 1024:  # 10MB
+            return jsonify({'success': False, 'message': 'حجم فایل نباید بیشتر از 10 مگابایت باشد'}), 400
+        
+        # Check file extension
+        allowed_extensions = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp'}
+        file_ext = os.path.splitext(file.filename)[1].lower()
+        if file_ext not in allowed_extensions:
+            return jsonify({'success': False, 'message': 'فرمت فایل نامعتبر است. فقط تصاویر مجاز هستند'}), 400
             
         invoice_id = request.form.get('invoice_id')
         if not invoice_id:
@@ -6628,125 +7795,190 @@ def api_payment_upload_receipt():
             if not invoice_id:
                 return jsonify({'success': False, 'message': 'خطا در ایجاد فاکتور'}), 500
         
-        # Send to Telegram Receipts Channel
+        # Save receipt file locally first
+        receipts_dir = os.path.join(os.path.dirname(__file__), 'static', 'receipts')
+        os.makedirs(receipts_dir, exist_ok=True)
+        
+        # Generate secure filename
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename = secure_filename(f"{invoice_id}_{timestamp}_{file.filename}")
+        receipt_path = os.path.join(receipts_dir, filename)
+        
+        # Save file
+        file.seek(0)
+        file.save(receipt_path)
+        
+        # Update invoice with receipt path
+        with db.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                UPDATE invoices 
+                SET receipt_path = %s, receipt_status = 'pending_approval', receipt_uploaded_at = NOW()
+                WHERE id = %s
+            ''', (filename, invoice_id))
+            conn.commit()
+            cursor.close()
+        
+        # Send to Telegram Receipts Channel (if configured) or notify admin
         from telegram import Bot, InputFile
         bot_config = get_bot_config()
         receipts_channel_id = bot_config.get('receipts_channel_id')
         
-        if not receipts_channel_id:
-            logger.error("Receipts channel ID is missing in bot config")
-            return jsonify({'success': False, 'message': 'خطای سیستم: کانال رسیدها تنظیم نشده است'}), 500
-            
-        logger.info(f"Receipts channel ID: {receipts_channel_id}")
-            
-        # We need to send the file to Telegram.
-        # We can use the bot token to send it.
-        bot = Bot(token=bot_config['token'])
-        
-        # Read file content and wrap in BytesIO
-        import io
-        file_content = file.read()
-        if not file_content:
-            logger.error("Uploaded file is empty")
-            return jsonify({'success': False, 'message': 'فایل آپلود شده خالی است'}), 400
-            
-        file_obj = io.BytesIO(file_content)
-        file_obj.name = file.filename or 'receipt.jpg'
-        
-        # Get user info
-        user = db.get_user(user_id)
-        invoice_data = db.get_invoice(invoice_id)
-        
-        if not invoice_data:
-            return jsonify({'success': False, 'message': 'فاکتور یافت نشد'}), 404
-        
-        caption = f"""
-🧾 رسید پرداخت جدید (وب اپلیکیشن)
-
-👤 کاربر: {user.get('first_name', 'Unknown')} (ID: {user_id})
-💰 مبلغ: {invoice_data['amount']:,} تومان
-🔢 شماره فاکتور: #{invoice_id}
-
-جهت تایید یا رد پرداخت از دکمه‌های زیر استفاده کنید.
-        """
-        
-        from telegram import InlineKeyboardMarkup, InlineKeyboardButton
-        keyboard = [
-            [
-                InlineKeyboardButton("✅ تایید پرداخت", callback_data=f"approve_receipt_{invoice_id}"),
-                InlineKeyboardButton("❌ رد پرداخت", callback_data=f"reject_receipt_{invoice_id}")
-            ]
-        ]
-        
-        # Send photo using requests (synchronous and reliable)
-        import requests
-        import json
-        
         telegram_success = False
-        try:
-            # Ensure receipts_channel_id is correct type
+        if receipts_channel_id and receipts_channel_id != 0:
+            # Send to channel
             try:
-                if str(receipts_channel_id).lstrip('-').isdigit():
-                    receipts_channel_id = int(receipts_channel_id)
-            except:
-                pass
+                import io
+                import requests
+                import json
+                
+                # Read file content
+                with open(receipt_path, 'rb') as f:
+                    file_content = f.read()
+                
+                file_obj = io.BytesIO(file_content)
+                file_obj.name = filename
+                
+                # Get user info
+                user = db.get_user(user_id)
+                invoice_data = db.get_invoice(invoice_id)
+                
+                if not invoice_data:
+                    return jsonify({'success': False, 'message': 'فاکتور یافت نشد'}), 404
+                
+                caption = f"""🧾 **رسید پرداخت جدید**
 
-            url = f"https://api.telegram.org/bot{bot_config['token']}/sendPhoto"
-            
-            # Reset file position
-            file_obj.seek(0)
-            
-            # Construct keyboard manually for JSON serialization
-            keyboard_dict = {
-                'inline_keyboard': [
-                    [
-                        {'text': "✅ تایید پرداخت", 'callback_data': f"approve_receipt_{invoice_id}"},
-                        {'text': "❌ رد پرداخت", 'callback_data': f"reject_receipt_{invoice_id}"}
+👤 **کاربر:** {user.get('first_name', 'Unknown')} (ID: {user_id})
+💰 **مبلغ:** {invoice_data['amount']:,} تومان
+🔢 **شماره فاکتور:** #{invoice_id}
+
+جهت تایید یا رد پرداخت از دکمه‌های زیر استفاده کنید."""
+                
+                # Construct keyboard
+                keyboard_dict = {
+                    'inline_keyboard': [
+                        [
+                            {'text': "✅ تایید پرداخت", 'callback_data': f"approve_receipt_{invoice_id}"},
+                            {'text': "❌ رد پرداخت", 'callback_data': f"reject_receipt_{invoice_id}"}
+                        ]
                     ]
-                ]
-            }
-            
-            # Prepare data
-            files = {'photo': ('receipt.jpg', file_obj, 'image/jpeg')}
-            data = {
-                'chat_id': receipts_channel_id,
-                'caption': caption,
-                'reply_markup': json.dumps(keyboard_dict)
-            }
-            
-            logger.info(f"Sending receipt photo to channel {receipts_channel_id} for invoice {invoice_id} via requests")
-            
-            response = requests.post(url, files=files, data=data, timeout=30)
-            
-            if response.status_code == 200:
-                logger.info("Receipt sent successfully to Telegram")
-                telegram_success = True
-            else:
-                logger.error(f"Telegram send error: {response.status_code} - {response.text}")
+                }
+                
+                # Ensure receipts_channel_id is correct type
+                try:
+                    if str(receipts_channel_id).lstrip('-').isdigit():
+                        receipts_channel_id = int(receipts_channel_id)
+                except:
+                    pass
+
+                url = f"https://api.telegram.org/bot{bot_config['token']}/sendPhoto"
+                
+                # Prepare data
+                files = {'photo': (filename, file_obj, 'image/jpeg')}
+                data = {
+                    'chat_id': receipts_channel_id,
+                    'caption': caption,
+                    'reply_markup': json.dumps(keyboard_dict),
+                    'parse_mode': 'Markdown'
+                }
+                
+                logger.info(f"Sending receipt photo to channel {receipts_channel_id} for invoice {invoice_id}")
+                
+                response = requests.post(url, files=files, data=data, timeout=30)
+                
+                if response.status_code == 200:
+                    logger.info("Receipt sent successfully to Telegram channel")
+                    telegram_success = True
+                else:
+                    logger.error(f"Telegram send error: {response.status_code} - {response.text}")
+                    telegram_success = False
+                    
+            except Exception as e:
+                logger.error(f"Telegram send error: {e}")
+                import traceback
+                logger.error(traceback.format_exc())
                 telegram_success = False
-            
-        except Exception as e:
-            logger.error(f"Telegram send error: {e}")
-            import traceback
-            logger.error(traceback.format_exc())
-            telegram_success = False
-                
-        if telegram_success:
-            # Update invoice
-            with db.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("UPDATE invoices SET payment_method = 'card', status = 'pending_approval' WHERE id = %s", (invoice_id,))
-                conn.commit()
-                
-            return jsonify({'success': True, 'message': 'رسید با موفقیت ارسال شد'})
         else:
-            return jsonify({'success': False, 'message': 'خطا در ارسال رسید به تلگرام (مشکل در بات)'}), 500
+            # No channel configured - send notification to admin via bot
+            try:
+                from telegram_helper import TelegramHelper
+                import io
+                
+                # Read file content
+                with open(receipt_path, 'rb') as f:
+                    file_content = f.read()
+                
+                file_obj = io.BytesIO(file_content)
+                file_obj.name = filename
+                
+                # Get user info
+                user = db.get_user(user_id)
+                invoice_data = db.get_invoice(invoice_id)
+                
+                if not invoice_data:
+                    return jsonify({'success': False, 'message': 'فاکتور یافت نشد'}), 404
+                
+                admin_id = bot_config.get('admin_id')
+                if admin_id:
+                    message = f"""🧾 **رسید پرداخت جدید**
+
+👤 **کاربر:** {user.get('first_name', 'Unknown')} (ID: {user_id})
+💰 **مبلغ:** {invoice_data['amount']:,} تومان
+🔢 **شماره فاکتور:** #{invoice_id}
+
+⚠️ **توجه:** کانال رسیدها تنظیم نشده است. لطفاً از طریق پنل مدیریت رسید را بررسی کنید."""
+                    
+                    # Send message with photo to admin
+                    try:
+                        bot = Bot(token=bot_config['token'])
+                        from telegram import InputFile
+                        file_obj.seek(0)
+                        photo_file = InputFile(file_obj, filename=filename)
+                        
+                        # Send photo with inline keyboard
+                        from telegram import InlineKeyboardMarkup, InlineKeyboardButton
+                        keyboard = InlineKeyboardMarkup([
+                            [
+                                InlineKeyboardButton("✅ تایید پرداخت", callback_data=f"approve_receipt_{invoice_id}"),
+                                InlineKeyboardButton("❌ رد پرداخت", callback_data=f"reject_receipt_{invoice_id}")
+                            ]
+                        ])
+                        
+                        import asyncio
+                        loop = asyncio.new_event_loop()
+                        asyncio.set_event_loop(loop)
+                        loop.run_until_complete(bot.send_photo(
+                            chat_id=admin_id,
+                            photo=photo_file,
+                            caption=message,
+                            reply_markup=keyboard,
+                            parse_mode='Markdown'
+                        ))
+                        loop.close()
+                        telegram_success = True
+                        logger.info(f"Receipt notification sent to admin {admin_id}")
+                    except Exception as e:
+                        logger.error(f"Error sending receipt to admin: {e}")
+                        telegram_success = False
+            except Exception as e:
+                logger.error(f"Error in admin notification: {e}")
+                telegram_success = False
+                        
+        # Update invoice status
+        with db.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("UPDATE invoices SET payment_method = 'card', status = 'pending_approval' WHERE id = %s", (invoice_id,))
+            conn.commit()
+            cursor.close()
+                
+        return jsonify({'success': True, 'message': 'رسید با موفقیت ارسال شد'})
 
     except Exception as e:
         logger.error(f"Error uploading receipt: {e}")
         import traceback
         logger.error(traceback.format_exc())
-        return secure_error_response(e)
+        error_message = str(e) if str(e) else 'خطا در آپلود رسید'
+        return jsonify({'success': False, 'message': error_message}), 500
             
 
 
@@ -7255,67 +8487,7 @@ def api_admin_reserve_renew_service(service_id):
         logger.error(f"Error reserving renewal: {e}")
         return secure_error_response(e)
 
-@app.route('/api/admin/services/<int:service_id>', methods=['DELETE'])
-@admin_required
-def api_admin_delete_service(service_id):
-    """Delete service"""
-    try:
-        service = db.get_client_by_id(service_id)
-        if not service:
-            return jsonify({'success': False, 'message': 'سرویس یافت نشد'}), 404
-        
-        # Delete from panel
-        from admin_manager import AdminManager
-        db_instance = get_db()
-        admin_mgr = AdminManager(db_instance)
-        panel_mgr = admin_mgr.get_panel_manager(service['panel_id'])
-        
-        if panel_mgr and panel_mgr.login():
-            panel_mgr.delete_client(
-                service['inbound_id'],
-                service['client_uuid']
-            )
-        
-        # Get user info for reporting
-        user = None
-        if service.get('user_id'):
-            user = db_instance.get_user_by_id(service['user_id'])
-        
-        # Delete from database
-        success = db.delete_client(service_id)
-        
-        if success:
-            # Report service deletion to channel
-            try:
-                import asyncio
-                from reporting_system import ReportingSystem
-                from telegram import Bot
-                bot_config = get_bot_config()
-                telegram_bot = Bot(token=bot_config['token'])
-                reporting_system = ReportingSystem(telegram_bot, bot_config=bot_config)
-                if user:
-                    service_data = {
-                        'service_name': service.get('client_name', 'سرویس'),
-                        'data_amount': service.get('total_gb', 0),
-                        'panel_name': service.get('panel_name', 'نامشخص')
-                    }
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
-                    loop.run_until_complete(reporting_system.report_service_deleted(user, service_data, "حذف توسط ادمین"))
-                    loop.close()
-            except Exception as e:
-                logger.error(f"Failed to send service deletion report: {e}")
-                import traceback
-                logger.error(traceback.format_exc())
-            
-            return jsonify({'success': True, 'message': 'سرویس با موفقیت حذف شد'})
-        else:
-            return jsonify({'success': False, 'message': 'خطا در حذف سرویس'}), 500
-    except Exception as e:
-        logger.error(f"Error deleting service: {e}")
-        # Don't expose internal error details to users
-        safe_msg = sanitize_error_message(e, include_details=False)
-        return jsonify({'success': False, 'message': safe_msg}), 500
+
 
 # Error handlers - SECURITY: Don't leak information
 @app.errorhandler(404)

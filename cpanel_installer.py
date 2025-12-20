@@ -79,7 +79,8 @@ def get_user_input():
     config['CHANNEL_ID'] = input(f"{Colors.BOLD}Enter Channel ID (e.g., @MyChannel):{Colors.ENDC} ").strip()
     config['CHANNEL_LINK'] = input(f"{Colors.BOLD}Enter Channel Link (e.g., https://t.me/MyChannel):{Colors.ENDC} ").strip()
     config['REPORTS_CHANNEL_ID'] = input(f"{Colors.BOLD}Enter Reports Channel ID (Numeric):{Colors.ENDC} ").strip()
-    config['RECEIPTS_CHANNEL_ID'] = input(f"{Colors.BOLD}Enter Receipts Channel ID (Numeric):{Colors.ENDC} ").strip()
+    receipts_channel = input(f"{Colors.BOLD}Enter Receipts Channel ID (Numeric, optional - press Enter to skip):{Colors.ENDC} ").strip()
+    config['RECEIPTS_CHANNEL_ID'] = receipts_channel if receipts_channel else '0'
     
     # Database Configuration
     print(f"\n{Colors.HEADER}--- Database Settings (MySQL) ---{Colors.ENDC}")
@@ -213,8 +214,22 @@ def initialize_database():
         print_error(f"Database initialization failed: {e}")
         print_info("Please check your database credentials in .env file.")
 
+def initialize_default_texts():
+    print_step(7, "Initializing Default Texts...")
+    try:
+        from professional_database import ProfessionalDatabaseManager
+        from text_manager import TextManager
+        
+        db = ProfessionalDatabaseManager()
+        text_manager = TextManager(db)
+        count = text_manager.initialize_default_texts(db)
+        print_success(f"Initialized {count} default texts in database.")
+    except Exception as e:
+        print_error(f"Could not initialize default texts: {e}")
+        print_info("You can initialize texts manually from admin panel later.")
+
 def create_start_script():
-    print_step(7, "Creating Startup Script (start_bot.sh)...")
+    print_step(8, "Creating Startup Script (start_bot.sh)...")
     
     # Get python path and current directory
     python_path = sys.executable
@@ -282,6 +297,7 @@ def main():
         create_passenger_wsgi()
         initialize_database()
         create_start_script()
+        initialize_default_texts()
         print_final_instructions(config)
     except KeyboardInterrupt:
         print(f"\n\n{Colors.WARNING}Installation cancelled by user.{Colors.ENDC}")

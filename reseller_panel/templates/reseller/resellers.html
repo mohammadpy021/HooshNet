@@ -1,0 +1,328 @@
+{% extends "reseller/layout.html" %}
+
+{% block title %}نمایندگان{% endblock %}
+{% block page_title %}مدیریت نمایندگان{% endblock %}
+
+{% block content %}
+<!-- Search Box -->
+<div class="search-box">
+    <i class="fa-solid fa-search search-icon"></i>
+    <input type="text" class="search-input" id="resellerSearch" placeholder="جستجوی نماینده...">
+</div>
+
+<!-- Resellers List -->
+<div class="resellers-list" id="resellersList">
+    {% for reseller in resellers %}
+    <div class="reseller-card" data-id="{{ reseller.user_id }}">
+        <div class="reseller-avatar">
+            {{ reseller.first_name[0] if reseller.first_name else 'U' }}
+        </div>
+        <div class="reseller-info">
+            <div class="reseller-name">
+                {{ reseller.first_name or 'کاربر' }} {{ reseller.last_name or '' }}
+                {% if reseller.level == 'gold' %}
+                <span class="badge badge-gold"><i class="fa-solid fa-crown"></i> طلایی</span>
+                {% elif reseller.level == 'silver' %}
+                <span class="badge badge-silver"><i class="fa-solid fa-medal"></i> نقره‌ای</span>
+                {% else %}
+                <span class="badge badge-primary">استاندارد</span>
+                {% endif %}
+            </div>
+            <div class="reseller-meta">
+                <span><i class="fa-solid fa-at"></i> {{ reseller.username or 'ندارد' }}</span>
+                <span><i class="fa-solid fa-percent"></i> تخفیف: {{ reseller.discount_rate|int }}%</span>
+                <span><i class="fa-solid fa-coins"></i> کمیسیون: {{ reseller.commission_rate|int }}%</span>
+            </div>
+            <div class="reseller-meta mt-1">
+                <span class="text-success">
+                    <i class="fa-solid fa-sack-dollar"></i> درآمد: {{ format_currency(reseller.total_earnings) }} تومان
+                </span>
+                <span class="{{ 'text-success' if reseller.status == 'active' else 'text-danger' }}">
+                    <i class="fa-solid fa-circle" style="font-size: 0.5rem;"></i>
+                    {{ 'فعال' if reseller.status == 'active' else 'غیرفعال' }}
+                </span>
+            </div>
+        </div>
+        <button class="btn btn-icon btn-outline edit-reseller-btn" data-id="{{ reseller.user_id }}"
+            data-name="{{ reseller.first_name or '' }} {{ reseller.last_name or '' }}" data-level="{{ reseller.level }}"
+            data-commission="{{ reseller.commission_rate }}" data-discount="{{ reseller.discount_rate }}"
+            data-status="{{ reseller.status }}">
+            <i class="fa-solid fa-ellipsis-vertical"></i>
+        </button>
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <i class="fa-solid fa-users-slash"></i>
+        <p>هنوز نماینده‌ای وجود ندارد</p>
+        <button class="btn btn-primary" onclick="openAddModal()">
+            <i class="fa-solid fa-plus"></i>
+            افزودن اولین نماینده
+        </button>
+    </div>
+    {% endfor %}
+</div>
+
+<!-- FAB Button -->
+{% if resellers %}
+<button class="fab" onclick="openAddModal()">
+    <i class="fa-solid fa-plus"></i>
+</button>
+{% endif %}
+
+<!-- Add Reseller Modal -->
+<div class="modal-overlay" id="addResellerModal">
+    <div class="modal-content">
+        <div class="modal-handle"></div>
+        <div class="modal-header">
+            <h2 class="modal-title">افزودن نماینده جدید</h2>
+            <button class="modal-close" onclick="closeAddModal()">
+                <i class="fa-solid fa-times"></i>
+            </button>
+        </div>
+        <form action="{{ url_for('reseller.add_reseller') }}" method="POST" id="addResellerForm">
+            <!-- User Search -->
+            <div class="form-group">
+                <label class="form-label">جستجوی کاربر</label>
+                <div class="search-box mb-0">
+                    <i class="fa-solid fa-search search-icon"></i>
+                    <input type="text" class="search-input" id="userSearchInput" placeholder="شناسه یا نام کاربری...">
+                    <div class="search-results" id="userSearchResults"></div>
+                </div>
+                <input type="hidden" name="user_id" id="selectedUserId" required>
+                <div id="selectedUserInfo" class="mt-1" style="display: none;">
+                    <div class="reseller-card"
+                        style="margin-bottom: 0; background: rgba(70, 211, 105, 0.1); border-color: var(--color-success);">
+                        <div class="reseller-avatar" id="selectedUserAvatar">U</div>
+                        <div class="reseller-info">
+                            <div class="reseller-name" id="selectedUserName">کاربر انتخاب شده</div>
+                            <div class="reseller-meta">
+                                <span id="selectedUserMeta"></span>
+                            </div>
+                        </div>
+                        <button type="button" class="btn btn-icon btn-outline" onclick="clearUserSelection()">
+                            <i class="fa-solid fa-times"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Level Selection -->
+            <div class="form-group">
+                <label class="form-label">سطح نمایندگی</label>
+                <select name="level" class="form-control" id="resellerLevel">
+                    <option value="standard">استاندارد</option>
+                    <option value="silver">نقره‌ای</option>
+                    <option value="gold">طلایی</option>
+                </select>
+            </div>
+
+            <!-- Commission & Discount -->
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">درصد کمیسیون</label>
+                    <input type="number" name="commission" class="form-control" value="10" min="0" max="100" step="0.5">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">درصد تخفیف</label>
+                    <input type="number" name="discount" class="form-control" value="0" min="0" max="100" step="0.5">
+                </div>
+            </div>
+
+            <!-- Submit -->
+            <div class="form-row mt-2">
+                <button type="button" class="btn btn-outline" onclick="closeAddModal()">انصراف</button>
+                <button type="submit" class="btn btn-primary">
+                    <i class="fa-solid fa-check"></i>
+                    ذخیره نماینده
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Edit Reseller Modal -->
+<div class="modal-overlay" id="editResellerModal">
+    <div class="modal-content">
+        <div class="modal-handle"></div>
+        <div class="modal-header">
+            <h2 class="modal-title">ویرایش نماینده</h2>
+            <button class="modal-close" onclick="closeEditModal()">
+                <i class="fa-solid fa-times"></i>
+            </button>
+        </div>
+        <form action="{{ url_for('reseller.add_reseller') }}" method="POST" id="editResellerForm">
+            <input type="hidden" name="user_id" id="editUserId">
+
+            <div class="form-group">
+                <label class="form-label">نام نماینده</label>
+                <input type="text" class="form-control" id="editUserName" disabled>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">سطح نمایندگی</label>
+                <select name="level" class="form-control" id="editLevel">
+                    <option value="standard">استاندارد</option>
+                    <option value="silver">نقره‌ای</option>
+                    <option value="gold">طلایی</option>
+                </select>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">درصد کمیسیون</label>
+                    <input type="number" name="commission" class="form-control" id="editCommission" min="0" max="100"
+                        step="0.5">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">درصد تخفیف</label>
+                    <input type="number" name="discount" class="form-control" id="editDiscount" min="0" max="100"
+                        step="0.5">
+                </div>
+            </div>
+
+            <div class="form-row mt-2">
+                <button type="button" class="btn btn-danger" onclick="confirmDelete()">
+                    <i class="fa-solid fa-trash"></i> حذف
+                </button>
+                <button type="submit" class="btn btn-primary">
+                    <i class="fa-solid fa-check"></i> ذخیره
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+    // Modal Functions
+    function openAddModal() {
+        document.getElementById('addResellerModal').classList.add('active');
+        document.body.style.overflow = 'hidden';
+    }
+
+    function closeAddModal() {
+        document.getElementById('addResellerModal').classList.remove('active');
+        document.body.style.overflow = '';
+        clearUserSelection();
+    }
+
+    function openEditModal(data) {
+        document.getElementById('editUserId').value = data.id;
+        document.getElementById('editUserName').value = data.name;
+        document.getElementById('editLevel').value = data.level;
+        document.getElementById('editCommission').value = data.commission;
+        document.getElementById('editDiscount').value = data.discount;
+        document.getElementById('editResellerModal').classList.add('active');
+        document.body.style.overflow = 'hidden';
+    }
+
+    function closeEditModal() {
+        document.getElementById('editResellerModal').classList.remove('active');
+        document.body.style.overflow = '';
+    }
+
+    function confirmDelete() {
+        const userId = document.getElementById('editUserId').value;
+        if (confirm('آیا از حذف این نماینده مطمئن هستید؟')) {
+            window.location.href = `/reseller/resellers/delete/${userId}`;
+        }
+    }
+
+    // User Search
+    let searchTimeout;
+    const userSearchInput = document.getElementById('userSearchInput');
+    const userSearchResults = document.getElementById('userSearchResults');
+
+    if (userSearchInput) {
+        userSearchInput.addEventListener('input', function () {
+            clearTimeout(searchTimeout);
+            const query = this.value.trim();
+
+            if (query.length < 2) {
+                userSearchResults.classList.remove('active');
+                return;
+            }
+
+            searchTimeout = setTimeout(() => {
+                fetch(`/reseller/api/search-user?q=${encodeURIComponent(query)}`)
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data.users && data.users.length > 0) {
+                            userSearchResults.innerHTML = data.users.map(user => `
+                            <div class="search-result-item" onclick="selectUser(${user.id}, '${user.telegram_id}', '${user.first_name || ''}', '${user.username || ''}')">
+                                <div class="reseller-avatar" style="width: 36px; height: 36px; font-size: 0.9rem;">
+                                    ${(user.first_name || 'U')[0]}
+                                </div>
+                                <div>
+                                    <div style="font-weight: 600;">${user.first_name || 'کاربر'} ${user.last_name || ''}</div>
+                                    <div style="font-size: 0.75rem; color: var(--color-text-muted);">
+                                        ${user.username ? '@' + user.username : ''} | ${user.telegram_id}
+                                    </div>
+                                </div>
+                            </div>
+                        `).join('');
+                            userSearchResults.classList.add('active');
+                        } else {
+                            userSearchResults.innerHTML = '<div class="search-result-item">کاربری یافت نشد</div>';
+                            userSearchResults.classList.add('active');
+                        }
+                    })
+                    .catch(err => {
+                        console.error('Search error:', err);
+                    });
+            }, 300);
+        });
+    }
+
+    function selectUser(id, telegramId, firstName, username) {
+        document.getElementById('selectedUserId').value = id;
+        document.getElementById('selectedUserAvatar').textContent = (firstName || 'U')[0];
+        document.getElementById('selectedUserName').textContent = firstName || 'کاربر';
+        document.getElementById('selectedUserMeta').innerHTML = `<i class="fa-solid fa-id-badge"></i> ${telegramId}${username ? ' | @' + username : ''}`;
+        document.getElementById('selectedUserInfo').style.display = 'block';
+        userSearchInput.value = '';
+        userSearchResults.classList.remove('active');
+    }
+
+    function clearUserSelection() {
+        document.getElementById('selectedUserId').value = '';
+        document.getElementById('selectedUserInfo').style.display = 'none';
+    }
+
+    // Edit button handlers
+    document.querySelectorAll('.edit-reseller-btn').forEach(btn => {
+        btn.addEventListener('click', function (e) {
+            e.stopPropagation();
+            openEditModal({
+                id: this.dataset.id,
+                name: this.dataset.name,
+                level: this.dataset.level,
+                commission: this.dataset.commission,
+                discount: this.dataset.discount,
+                status: this.dataset.status
+            });
+        });
+    });
+
+    // Close modal on overlay click
+    document.querySelectorAll('.modal-overlay').forEach(modal => {
+        modal.addEventListener('click', function (e) {
+            if (e.target === this) {
+                this.classList.remove('active');
+                document.body.style.overflow = '';
+            }
+        });
+    });
+
+    // Search filter for resellers list
+    const resellerSearch = document.getElementById('resellerSearch');
+    if (resellerSearch) {
+        resellerSearch.addEventListener('input', function () {
+            const query = this.value.toLowerCase();
+            document.querySelectorAll('.reseller-card').forEach(card => {
+                const text = card.textContent.toLowerCase();
+                card.style.display = text.includes(query) ? 'flex' : 'none';
+            });
+        });
+    }
+</script>
+{% endblock %}

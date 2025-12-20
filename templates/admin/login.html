@@ -9,7 +9,7 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="theme-color" content="#000000">
-    <title>ورود به پنل</title>
+    <title>ورود مدیریت</title>
 
     <!-- Telegram Web App SDK -->
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
@@ -25,6 +25,25 @@
     <!-- Custom CSS -->
     <link rel="stylesheet"
         href="{{ url_for('static', filename='css/landing-page-redesign.css') }}?v={{ range(1, 10000) | random }}">
+
+    <style>
+        .app-title {
+            color: #ef4444;
+            /* Red for admin */
+        }
+
+        .logo-icon {
+            color: #ef4444;
+        }
+
+        .logo-circle {
+            border-color: #ef4444;
+        }
+
+        .logo-pulse {
+            background: rgba(239, 68, 68, 0.2);
+        }
+    </style>
 </head>
 
 <body>
@@ -42,13 +61,13 @@
         <div class="logo-wrapper">
             <div class="logo-circle"></div>
             <div class="logo-pulse"></div>
-            <i class="fas fa-shield-halved logo-icon"></i>
+            <i class="fas fa-user-shield logo-icon"></i>
         </div>
 
         <!-- Typography -->
         <div>
-            <h1 class="app-title">VPN PANEL</h1>
-            <p class="app-subtitle">اتصال امن، سریع و بدون محدودیت</p>
+            <h1 class="app-title">ADMIN PANEL</h1>
+            <p class="app-subtitle">پنل مدیریت سیستم</p>
         </div>
 
         <!-- Loading Indicator -->
@@ -56,7 +75,7 @@
             <div class="loader-bar">
                 <div class="loader-progress"></div>
             </div>
-            <p class="status-text" id="status">در حال بررسی امنیت...</p>
+            <p class="status-text" id="status">در حال بررسی دسترسی مدیریت...</p>
         </div>
 
     </div>
@@ -72,6 +91,14 @@
             tg.enableClosingConfirmation();
             if (tg.setHeaderColor) tg.setHeaderColor('#000000');
             if (tg.setBackgroundColor) tg.setBackgroundColor('#000000');
+
+            // Request Fullscreen for Admin
+            try {
+                tg.requestFullscreen();
+            } catch (e) {
+                console.log('Fullscreen not supported or failed:', e);
+            }
+
             tg.ready();
 
             // Ensure full height
@@ -114,47 +141,15 @@
                     };
                 }
             }
-
-            // Fallback for URL hash (dev mode or direct link)
-            const hash = window.location.hash.substring(1);
-            if (hash) {
-                const params = new URLSearchParams(hash);
-                const userParam = params.get('tgWebAppData');
-
-                if (userParam) {
-                    const tgParams = new URLSearchParams(userParam);
-                    const userJson = tgParams.get('user');
-                    const initData = userParam;
-
-                    if (userJson) {
-                        try {
-                            const user = JSON.parse(decodeURIComponent(userJson));
-                            return {
-                                init_data: initData,
-                                user: user
-                            };
-                        } catch (e) {
-                            console.error('Failed to parse user JSON:', e);
-                        }
-                    }
-                }
-            }
             return null;
         }
 
         function login(data) {
-            updateStatus('خوش آمدید ' + data.user.first_name);
-
-            // Add next param if exists
-            const urlParams = new URLSearchParams(window.location.search);
-            const nextUrl = urlParams.get('next');
-            if (nextUrl) {
-                data.next = nextUrl;
-            }
+            updateStatus('خوش آمدید مدیر ' + data.user.first_name);
 
             const pathParts = window.location.pathname.split('/').filter(p => p);
-            const botName = pathParts[0] || '';
-            const authPath = botName ? `/${botName}/auth/telegram-webapp` : '/auth/telegram-webapp';
+            const botName = pathParts[0] === 'admin' ? '' : pathParts[0]; // Handle /admin/login vs /botname/admin/login
+            const authPath = botName ? `/${botName}/auth/admin-telegram-webapp` : '/auth/admin-telegram-webapp';
 
             fetch(authPath, {
                 method: 'POST',
@@ -164,9 +159,10 @@
                 .then(response => response.json())
                 .then(result => {
                     if (result.success) {
-                        updateStatus('در حال ورود به پنل...');
+                        updateStatus('در حال ورود به داشبورد مدیریت...');
                         setTimeout(() => {
                             let redirectUrl = result.redirect;
+                            // Ensure redirect URL has bot prefix if needed
                             if (botName && redirectUrl && !redirectUrl.startsWith(`/${botName}/`)) {
                                 if (redirectUrl.startsWith('/')) {
                                     redirectUrl = `/${botName}${redirectUrl}`;
@@ -178,6 +174,7 @@
                         }, 800);
                     } else {
                         updateStatus('خطا: ' + result.message);
+                        document.querySelector('.loader-bar').style.backgroundColor = '#ef4444';
                     }
                 })
                 .catch(err => {
@@ -196,7 +193,7 @@
                 updateStatus('لطفاً از طریق ربات وارد شوید');
                 document.querySelector('.loader-bar').style.display = 'none';
             }
-        }, 1500); // Slight delay for animation to play
+        }, 1500);
     </script>
 </body>
 

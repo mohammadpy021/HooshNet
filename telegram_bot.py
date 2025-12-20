@@ -22,6 +22,7 @@ from username_formatter import UsernameFormatter
 from message_templates import MessageTemplates
 from reporting_system import ReportingSystem
 from statistics_system import StatisticsSystem
+from settings_manager import SettingsManager
 # Payment callback removed
 from config import BOT_CONFIG, CLIENT_DEFAULTS, DEFAULT_PANEL_CONFIG, WEBAPP_CONFIG
 from traffic_monitor import TrafficMonitor
@@ -30,6 +31,7 @@ from user_info_updater import auto_update_user_info, ensure_user_updated
 from user_info_updater import auto_update_user_info, ensure_user_updated
 from channel_checker import require_channel_membership, check_channel_membership, show_force_join_message
 from system_manager import SystemManager
+from reseller_panel.models import ResellerManager
 
 # Configure logging
 logging.basicConfig(
@@ -100,6 +102,7 @@ class VPNBot:
         else:
             self.db = db
             
+        self.settings_manager = SettingsManager(self.db)
         self.system_manager = None
         
         self.panel_manager = PanelManager()
@@ -146,6 +149,26 @@ class VPNBot:
             import traceback
             logger.error(traceback.format_exc())
             self.text_manager = None
+        
+        # Initialize ResellерManager for discount pricing
+        try:
+            self.reseller_manager = ResellerManager(self.db)
+            logger.info("✅ ResellerManager initialized successfully")
+        except Exception as e:
+            logger.warning(f"⚠️ Could not initialize ResellerManager: {e}")
+            self.reseller_manager = None
+
+    def get_discounted_price(self, original_price: int, telegram_id: int) -> tuple:
+        """
+        Get discounted price for a user if they are a reseller.
+        Returns: (final_price, discount_rate, is_reseller)
+        """
+        if self.reseller_manager:
+            try:
+                return self.reseller_manager.calculate_discounted_price(original_price, telegram_id)
+            except Exception as e:
+                logger.warning(f"Error calculating reseller discount: {e}")
+        return original_price, 0, False
         
     async def process_user_registration_with_referral(self, user_id: int, user, context: ContextTypes.DEFAULT_TYPE, referral_code: str = None):
         """
@@ -238,8 +261,10 @@ class VPNBot:
             referral_code=new_referral_code
         )
         
-        # Get welcome bonus from config
-        welcome_bonus = REFERRAL_CONFIG.get('welcome_bonus', 1000)
+        # Get welcome bonus from settings (database) with fallback to config
+        welcome_bonus = self.settings_manager.get_setting('registration_gift_amount')
+        if welcome_bonus is None:
+            welcome_bonus = REFERRAL_CONFIG.get('welcome_bonus', 1000)
         
         # Add welcome bonus
         if welcome_bonus > 0:
@@ -269,7 +294,10 @@ class VPNBot:
         
         # Process referral reward
         if referrer_id and new_user_db_id:
-            referral_reward = REFERRAL_CONFIG.get('reward_amount', 3000)
+            # Get referral reward from settings (database) with fallback to config
+            referral_reward = self.settings_manager.get_setting('referral_reward_amount')
+            if referral_reward is None:
+                referral_reward = REFERRAL_CONFIG.get('reward_amount', 3000)
             
             # Add referral record (use database IDs, not telegram IDs)
             referral_id = self.db.add_referral(referrer_id, new_user_db_id, referral_reward)
@@ -347,6 +375,23 @@ class VPNBot:
             else:
                 referral_code = None
                 logger.warning(f"⚠️ Invalid referral code received for user {user_id}: {context.args[0]}")
+        
+        # Check if user is banned
+        db_user = self.db.get_user(user_id)
+        if db_user and db_user.get('is_banned', 0) == 1:
+            await update.message.reply_text(
+                """🚫 **حساب کاربری شما مسدود شده است**
+
+متأسفانه دسترسی شما به سرویس‌های ما به دلایل امنیتی یا نقض قوانین قطع شده است.
+
+⚠️ **توجه:**
+• دسترسی به بات و وب اپ غیرفعال است
+• سرویس‌های فعال شما غیرفعال شده‌اند
+• برای رفع مسدودیت با پشتیبانی تماس بگیرید
+
+📞 برای اطلاعات بیشتر با پشتیبانی تماس بگیرید."""
+            )
+            return
         
         # Check channel membership (except for admin)
         if user_id != self.bot_config['admin_id']:
@@ -618,6 +663,13 @@ class VPNBot:
         
         data = query.data
         logger.info(f"Received callback data: {data}")
+        
+        # Check if user is banned - FIRST CHECK before anything else
+        user_id = update.effective_user.id
+        user_data = self.db.get_user(user_id)
+        if user_data and user_data.get('is_banned', 0) == 1:
+            await query.edit_message_text("🚫 شما مسدود شده‌اید و دسترسی به ربات ندارید.")
+            return
         
         # Check channel membership for all callbacks except check_channel_join itself
         if data != "check_channel_join":
@@ -968,6 +1020,12 @@ class VPNBot:
                 await self.handle_admin_panel(update, context)
             elif data == "system_settings":
                 await self.handle_system_settings(update, context)
+            elif data == "bot_info_settings":
+                await self.handle_bot_info_settings(update, context)
+            elif data.startswith("edit_setting_"):
+                # edit_setting_setting_key
+                key = data.replace("edit_setting_", "")
+                await self.handle_edit_setting(update, context, key)
             elif data == "system_logs":
                 await self.handle_system_action(update, context, "logs")
             elif data.startswith("sys_"):
@@ -1598,6 +1656,23 @@ class VPNBot:
         user_id = update.effective_user.id
         text = update.message.text
         
+        # Check if user is banned - FIRST CHECK before anything else
+        user_data = self.db.get_user(user_id)
+        if user_data and user_data.get('is_banned', 0) == 1:
+            await update.message.reply_text(
+                """🚫 **حساب کاربری شما مسدود شده است**
+
+متأسفانه دسترسی شما به سرویس‌های ما به دلایل امنیتی یا نقض قوانین قطع شده است.
+
+⚠️ **توجه:**
+• دسترسی به بات و وب اپ غیرفعال است
+• سرویس‌های فعال شما غیرفعال شده‌اند
+• برای رفع مسدودیت با پشتیبانی تماس بگیرید
+
+📞 برای اطلاعات بیشتر با پشتیبانی تماس بگیرید."""
+            )
+            return
+        
         # Check channel membership for all text messages (except if it's part of admin flow)
         # Allow admin to bypass
         if user_id != self.bot_config['admin_id']:
@@ -1668,6 +1743,11 @@ class VPNBot:
         # Check if user is editing a panel
         if context.user_data.get('editing_panel', False):
             await self.handle_edit_panel_text_input(update, context, text)
+            return
+        
+        # Check if user is editing a setting
+        if context.user_data.get('editing_setting', False):
+            await self.handle_save_setting(update, context, text)
             return
         
         # Check if user is adding a panel
@@ -2599,6 +2679,8 @@ class VPNBot:
 
     async def handle_manage_panels(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Alias for show_manage_panels - called from callback query routing"""
+        # Clear any previous state when returning to main panel menu
+        context.user_data.clear()
         await self.show_manage_panels(update, context)
 
     async def start_add_panel(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -2611,14 +2693,12 @@ class VPNBot:
         context.user_data['adding_panel'] = True
         
         add_text = """
-🔧 **اضافه کردن پنل جدید**
+✨ **افزودن پنل جدید**
 
-لطفاً نوع پنل را انتخاب کنید:
+مدیر گرامی، برای اتصال پنل جدید به ربات، لطفاً نوع پنل خود را از لیست زیر انتخاب نمایید.
+این انتخاب به ربات کمک می‌کند تا تنظیمات مناسب را برای ارتباط با سرور شما اعمال کند.
 
-🔵 **3x-ui**: پنل قدرتمند 3x-ui با قابلیت‌های پیشرفته
-🟢 **Marzban**: پنل مدرن Marzban با رابط کاربری ساده
-🟣 **Rebecca**: پنل مدیریت کاربران Rebecca
-🟠 **Pasargad**: پنل مدیریت کاربران Pasargad
+👇 **لطفاً یکی از گزینه‌های زیر را انتخاب کنید:**
         """
         
         reply_markup = ButtonLayout.create_panel_type_selection()
@@ -2637,21 +2717,30 @@ class VPNBot:
         context.user_data['panel_type'] = panel_type
         context.user_data['panel_step'] = 'name'
         
+        panel_display_name = {
+            '3x-ui': '3x-ui',
+            'marzban': 'Marzban',
+            'rebecca': 'Rebecca',
+            'pasargad': 'Pasarguard',
+            'marzneshin': 'Marzneshin'
+        }.get(panel_type, panel_type)
+        
         add_text = f"""
-➕ **اضافه کردن پنل جدید ({panel_type})**
+📝 **مرحله اول: نام‌گذاری پنل ({panel_display_name})**
 
-لطفاً نام پنل را وارد کنید:
+لطفاً یک نام دلخواه و منحصر‌به‌فرد برای این پنل وارد کنید.
+این نام صرفاً جهت نمایش در لیست پنل‌ها و مدیریت راحت‌تر استفاده می‌شود.
 
-**نکات:**
-• نام باید منحصر به فرد باشد
-• فقط حروف انگلیسی و اعداد مجاز است
-• طول نام باید بین 3 تا 20 کاراکتر باشد
+💡 **نکات مهم:**
+• نام باید کوتاه و گویا باشد.
+• از کاراکترهای خاص استفاده نکنید.
+• پیشنهاد می‌شود از نام لوکیشن سرور استفاده کنید (مثال: `Germany-1` یا `Hetzner-Main`)
 
-برای لغو عملیات /cancel را ارسال کنید.
+👇 **نام پنل را ارسال کنید:**
         """
         
         keyboard = [
-            [InlineKeyboardButton("❌ لغو", callback_data="manage_panels")]
+            [InlineKeyboardButton("❌ انصراف و بازگشت", callback_data="manage_panels")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
@@ -2693,7 +2782,7 @@ class VPNBot:
         )
     
     async def handle_edit_panel_field(self, update: Update, context: ContextTypes.DEFAULT_TYPE, panel_id: int, field: str):
-        """Handle editing a specific panel field"""
+        """Handle editing a specific panel field with professional panel-type-specific descriptions"""
         query = update.callback_query
         await query.answer()
         
@@ -2714,39 +2803,209 @@ class VPNBot:
             context.user_data['panel_id'] = panel_id
             context.user_data['edit_field'] = field
             
-            # Create appropriate message based on field
+            panel_type = panel.get('panel_type', '3x-ui')
+            panel_display_name = {
+                '3x-ui': '3x-ui',
+                'marzban': 'Marzban',
+                'rebecca': 'Rebecca',
+                'pasargad': 'Pasarguard',
+                'marzneshin': 'Marzneshin'
+            }.get(panel_type, panel_type)
+            
+            # Define field names (Persian)
             field_names = {
                 'name': 'نام پنل',
-                'url': 'URL پنل',
-                'username': 'یوزرنیم',
-                'password': 'پسورد',
+                'url': 'آدرس پنل (URL)',
+                'username': 'نام کاربری',
+                'password': 'رمز عبور',
                 'subscription_url': 'لینک سابسکریپشن',
                 'price': 'قیمت هر گیگابایت'
             }
             
-            examples = {
-                'name': 'مثال: Germany Server',
-                'url': 'مثال: https://panel.example.com:2080',
-                'username': 'مثال: admin',
-                'password': 'مثال: mypassword123',
-                'subscription_url': 'مثال: https://gr.astonnetwork.xyz:2096/sub',
-                'price': 'مثال: 15000'
-            }
+            # Create professional panel-type-specific messages
+            if field == 'name':
+                message = f"""
+✏️ **ویرایش نام پنل ({panel_display_name})**
+
+📋 **مقدار فعلی:** `{panel.get('name', 'تنظیم نشده')}`
+
+───────────────────
+📝 **نکات مهم:**
+• نام باید کوتاه، گویا و منحصربه‌فرد باشد
+• پیشنهاد می‌شود از نام لوکیشن سرور استفاده کنید
+• از کاراکترهای خاص استفاده نکنید
+
+✨ **مثال‌های حرفه‌ای:**
+`Germany-Main` | `Finland-Pro` | `Netherlands-1`
+
+👇 **نام جدید را ارسال کنید:**
+                """
             
-            message = f"""
+            elif field == 'url':
+                if panel_type in ['marzban', 'rebecca', 'marzneshin']:
+                    message = f"""
+✏️ **ویرایش آدرس پنل ({panel_display_name})**
+
+📋 **مقدار فعلی:** `{panel.get('url', 'تنظیم نشده')}`
+
+───────────────────
+📝 **فرمت صحیح برای {panel_display_name}:**
+آدرس کامل پنل *بدون* مسیر اضافی
+
+✨ **مثال صحیح:**
+`https://panel.example.com:8000`
+`https://vpn.myserver.net:443`
+
+❌ **مثال نادرست:**
+`https://panel.example.com:8000/dashboard`
+
+⚠️ **نکته:** پورت و پروتکل (http/https) را حتماً قرار دهید.
+
+👇 **آدرس جدید را ارسال کنید:**
+                    """
+                else:  # 3x-ui, pasargad
+                    message = f"""
+✏️ **ویرایش آدرس پنل ({panel_display_name})**
+
+📋 **مقدار فعلی:** `{panel.get('url', 'تنظیم نشده')}`
+
+───────────────────
+📝 **فرمت صحیح برای {panel_display_name}:**
+آدرس کامل شامل پورت و مسیر پنل (در صورت وجود)
+
+✨ **مثال صحیح:**
+`https://panel.example.com:2053`
+`https://vpn.server.net:54321/panel_path`
+
+⚠️ **نکته:** پورت پنل را حتماً قرار دهید.
+
+👇 **آدرس جدید را ارسال کنید:**
+                    """
+            
+            elif field == 'username':
+                message = f"""
+✏️ **ویرایش نام کاربری ({panel_display_name})**
+
+📋 **مقدار فعلی:** `{panel.get('username', 'تنظیم نشده')}`
+
+───────────────────
+📝 **توضیحات:**
+نام کاربری که برای ورود به پنل مدیریت استفاده می‌کنید
+
+✨ **مثال:**
+`admin` | `root` | `manager`
+
+👇 **نام کاربری جدید را ارسال کنید:**
+                """
+            
+            elif field == 'password':
+                message = f"""
+✏️ **ویرایش رمز عبور ({panel_display_name})**
+
+📋 **مقدار فعلی:** `[مخفی]`
+
+───────────────────
+📝 **توضیحات:**
+رمز عبور ورود به پنل مدیریت
+این اطلاعات به صورت امن ذخیره می‌شود
+
+⚠️ **نکته امنیتی:**
+• از رمز قوی استفاده کنید
+• رمز را با دیگران به اشتراک نگذارید
+
+👇 **رمز عبور جدید را ارسال کنید:**
+                """
+            
+            elif field == 'subscription_url':
+                if panel_type in ['marzban', 'marzneshin']:
+                    message = f"""
+✏️ **ویرایش لینک سابسکریپشن ({panel_display_name})**
+
+📋 **مقدار فعلی:** `{panel.get('subscription_url', 'تنظیم نشده')}`
+
+───────────────────
+📝 **فرمت صحیح برای {panel_display_name}:**
+دامنه یا آدرس سابسکریپشن برای تولید لینک‌های کاربران
+
+✨ **مثال صحیح:**
+`https://sub.example.com:8000`
+`https://subscription.myserver.net`
+
+⚠️ **نکته:** این آدرس برای تولید لینک سابسکریپشن کاربران استفاده می‌شود.
+
+👇 **لینک سابسکریپشن جدید را ارسال کنید:**
+                    """
+                elif panel_type == 'rebecca':
+                    message = f"""
+✏️ **ویرایش لینک سابسکریپشن ({panel_display_name})**
+
+📋 **مقدار فعلی:** `{panel.get('subscription_url', 'تنظیم نشده')}`
+
+───────────────────
+📝 **فرمت صحیح برای Rebecca:**
+دامنه سابسکریپشن که در پنل Rebecca تنظیم کرده‌اید
+
+✨ **مثال صحیح:**
+`https://sub.example.com:8000`
+`https://subscription.server.net`
+
+👇 **لینک سابسکریپشن جدید را ارسال کنید:**
+                    """
+                else:  # 3x-ui, pasargad
+                    message = f"""
+✏️ **ویرایش لینک سابسکریپشن ({panel_display_name})**
+
+📋 **مقدار فعلی:** `{panel.get('subscription_url', 'تنظیم نشده')}`
+
+───────────────────
+📝 **فرمت صحیح برای {panel_display_name}:**
+آدرس سابسکریپشن همراه با پورت
+
+✨ **مثال صحیح:**
+`https://sub.example.com:2096`
+`https://sub.example.com/sub`
+
+⚠️ **نکته:** اگر از sub.js استفاده می‌کنید، دامنه سابسکریپشن را وارد کنید.
+
+👇 **لینک سابسکریپشن جدید را ارسال کنید:**
+                    """
+            
+            elif field == 'price':
+                message = f"""
+✏️ **ویرایش قیمت هر گیگابایت ({panel_display_name})**
+
+📋 **مقدار فعلی:** `{panel.get('price_per_gb', 0):,} تومان`
+
+───────────────────
+📝 **توضیحات:**
+قیمت هر گیگابایت به تومان برای فروش حجمی
+
+✨ **مثال:**
+`15000` (پانزده هزار تومان)
+`20000` (بیست هزار تومان)
+
+⚠️ **نکته:** فقط عدد وارد کنید، بدون کاما یا حروف
+
+👇 **قیمت جدید را ارسال کنید (به تومان):**
+                """
+            
+            else:
+                message = f"""
 ✏️ **ویرایش {field_names.get(field, field)}**
 
-**مقدار فعلی:** {panel.get(field if field != 'price' else 'price_per_gb', 'تنظیم نشده')}
+📋 **مقدار فعلی:** `{panel.get(field, 'تنظیم نشده')}`
 
-لطفاً مقدار جدید را وارد کنید:
-
-{examples.get(field, '')}
+👇 **مقدار جدید را ارسال کنید:**
 
 💡 برای لغو عملیات /cancel را ارسال کنید.
-            """
+                """
+            
+            keyboard = [[InlineKeyboardButton("❌ انصراف و بازگشت", callback_data=f"edit_panel_{panel_id}")]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
             
             await query.edit_message_text(
                 message,
+                reply_markup=reply_markup,
                 parse_mode='Markdown'
             )
             
@@ -3236,34 +3495,65 @@ class VPNBot:
         
         step = context.user_data.get('panel_step', 'name')
         
+        # Common cancel button for all steps
+        cancel_keyboard = [[InlineKeyboardButton("❌ انصراف و بازگشت", callback_data="manage_panels")]]
+        cancel_markup = InlineKeyboardMarkup(cancel_keyboard)
+        
         if step == 'name':
             # Validate panel name
             if not self._validate_panel_name(text):
                 await update.message.reply_text(
-                    "❌ نام پنل نامعتبر است. لطفاً نام دیگری انتخاب کنید:"
+                    "❌ **نام نامعتبر است!**\n\n"
+                    "نام پنل باید بین 3 تا 20 کاراکتر باشد و تنها شامل حروف انگلیسی و اعداد باشد.\n"
+                    "لطفاً مجدداً تلاش کنید:",
+                    reply_markup=cancel_markup
                 )
                 return
             
             context.user_data['panel_name'] = text
             context.user_data['panel_step'] = 'url'
+            panel_type = context.user_data.get('panel_type', '3x-ui')
             
+            # Dynamic help text based on panel type
+            if panel_type in ['marzban', 'rebecca', 'marzneshin']:
+                url_example = "https://panel.example.com:8000"
+                url_note = "⚠️ **نکته مهم:** برای این نوع پنل، آدرس را **بدون** `/dashboard` یا مسیر اضافی وارد کنید."
+            else:  # 3x-ui, pasargad
+                url_example = "https://panel.example.com:2053/panel_path"
+                url_note = "⚠️ **نکته مهم:** آدرس باید شامل **پورت** و **مسیر پنل** (در صورت وجود) باشد."
+
             await update.message.reply_text(
-                "🔗 **لینک کامل ورود به پنل را وارد کنید:**\n\nمثال: `https://panel.example.com:2080/username`"
+                f"🔗 **مرحله دوم: آدرس اتصال به پنل**\n\n"
+                f"لطفاً آدرس کامل ورود به پنل خود را وارد کنید.\n\n"
+                f"📝 **الگوی صحیح:**\n`{url_example}`\n\n"
+                f"{url_note}\n\n"
+                f"👇 **آدرس پنل را ارسال کنید:**",
+                reply_markup=cancel_markup,
+                parse_mode='Markdown'
             )
             
         elif step == 'url':
             # Validate URL
             if not self._validate_url(text):
                 await update.message.reply_text(
-                    "❌ لینک نامعتبر است. لطفاً لینک صحیح وارد کنید:"
+                    "❌ **لینک نامعتبر است!**\n\n"
+                    "لطفاً مطمئن شوید آدرس با `http://` یا `https://` شروع می‌شود و فرمت صحیحی دارد.\n"
+                    "لطفاً مجدداً تلاش کنید:",
+                    reply_markup=cancel_markup
                 )
                 return
             
+            # Remove trailing slash if present
+            text = text.rstrip('/')
             context.user_data['panel_url'] = text
             context.user_data['panel_step'] = 'username'
             
             await update.message.reply_text(
-                "👤 **یوزرنیم پنل را وارد کنید:**"
+                "👤 **مرحله سوم: نام کاربری (Username)**\n\n"
+                "لطفاً نام کاربری ورود به پنل مدیریت خود را وارد کنید.\n\n"
+                "👇 **نام کاربری را ارسال کنید:**",
+                reply_markup=cancel_markup,
+                parse_mode='Markdown'
             )
             
         elif step == 'username':
@@ -3271,7 +3561,12 @@ class VPNBot:
             context.user_data['panel_step'] = 'password'
             
             await update.message.reply_text(
-                "🔑 **پسورد پنل را وارد کنید:**"
+                "🔑 **مرحله چهارم: رمز عبور (Password)**\n\n"
+                "لطفاً رمز عبور ورود به پنل مدیریت خود را وارد کنید.\n"
+                "این اطلاعات به صورت امن در دیتابیس ذخیره می‌شوند.\n\n"
+                "👇 **رمز عبور را ارسال کنید:**",
+                reply_markup=cancel_markup,
+                parse_mode='Markdown'
             )
             
         elif step == 'password':
@@ -3279,9 +3574,13 @@ class VPNBot:
             context.user_data['panel_step'] = 'subscription_url'
             
             await update.message.reply_text(
-                "🔗 **لینک سابسکریپشن پنل را وارد کنید:**\n\n"
-                "مثال: `https://gr.astonnetwork.xyz:2080/sub`\n\n"
-                "💡 این لینک برای ارسال کانفیگ‌های سابسکریپشن به کاربران استفاده می‌شود.",
+                "🌐 **مرحله پنجم: لینک سابسکریپشن (Subscription URL)**\n\n"
+                "لطفاً دامنه یا لینک سابسکریپشن متصل به این پنل را وارد کنید.\n"
+                "این لینک برای تولید لینک‌های اتصال کاربران استفاده می‌شود.\n\n"
+                "📝 **مثال:**\n`https://sub.example.com:2096`\n"
+                "یا\n`https://sub.example.com/sub`\n\n"
+                "👇 **لینک سابسکریپشن را ارسال کنید:**",
+                reply_markup=cancel_markup,
                 parse_mode='Markdown'
             )
             
@@ -3289,26 +3588,33 @@ class VPNBot:
             # Validate subscription URL
             if not self._validate_url(text):
                 await update.message.reply_text(
-                    "❌ لینک سابسکریپشن نامعتبر است. لطفاً لینک صحیح وارد کنید:\n\n"
-                    "مثال: `https://gr.astonnetwork.xyz:2080/sub`",
-                    parse_mode='Markdown'
+                    "❌ **لینک نامعتبر است!**\n\n"
+                    "لطفاً یک لینک معتبر وارد کنید (شروع با `http` یا `https`).\n"
+                    "لطفاً مجدداً تلاش کنید:",
+                    reply_markup=cancel_markup
                 )
                 return
             
-            context.user_data['panel_subscription_url'] = text
+            context.user_data['panel_subscription_url'] = text.rstrip('/')
             context.user_data['panel_step'] = 'sale_type'
             
+            keyboard = [
+                [InlineKeyboardButton("📊 فروش حجمی (گیگابایت)", callback_data="select_sale_type_gigabyte")],
+                [InlineKeyboardButton("📦 فروش پلنی (بسته‌ای)", callback_data="select_sale_type_plan")],
+                [InlineKeyboardButton("🔄 هر دو مدل", callback_data="select_sale_type_both")],
+                [InlineKeyboardButton("❌ انصراف و بازگشت", callback_data="manage_panels")]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
             await update.message.reply_text(
-                "🛒 **نوع فروش پنل را انتخاب کنید:**\n\n"
-                "• گیگابایتی: فروش بر اساس حجم (مثل قبل)\n"
-                "• پلنی: فروش بر اساس پلن‌های تعریف شده\n"
-                "• هر دو: هم گیگابایتی و هم پلنی",
-                reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("📊 گیگابایتی", callback_data="select_sale_type_gigabyte")],
-                    [InlineKeyboardButton("📦 پلنی", callback_data="select_sale_type_plan")],
-                    [InlineKeyboardButton("🔄 هر دو", callback_data="select_sale_type_both")],
-                    [InlineKeyboardButton("❌ لغو", callback_data="manage_panels")]
-                ])
+                "🛒 **مرحله ششم: انتخاب مدل فروش**\n\n"
+                "لطفاً مشخص کنید که قصد دارید سرویس‌های این پنل را چگونه به فروش برسانید:\n\n"
+                "🔹 **فروش حجمی:** کاربر مقدار حجم (مثلاً ۵۰ گیگ) را انتخاب و خریداری می‌کند.\n"
+                "🔹 **فروش پلنی:** کاربر بسته‌های تعریف شده (مثلاً ۱ ماهه ۳۰ گیگ) را خریداری می‌کند.\n"
+                "🔹 **هر دو:** هر دو گزینه برای کاربر فعال خواهد بود.\n\n"
+                "👇 **یکی از گزینه‌های زیر را انتخاب کنید:**",
+                reply_markup=reply_markup,
+                parse_mode='Markdown'
             )
             
         elif step == 'price':
@@ -3316,7 +3622,10 @@ class VPNBot:
                 price_per_gb = int(text)
                 if price_per_gb <= 0:
                     await update.message.reply_text(
-                        "❌ قیمت باید بیشتر از صفر باشد. لطفاً قیمت صحیح وارد کنید:"
+                        "❌ **قیمت نامعتبر است!**\n\n"
+                        "قیمت باید یک عدد بزرگتر از صفر باشد.\n"
+                        "لطفاً مجدداً تلاش کنید:",
+                        reply_markup=cancel_markup
                     )
                     return
                 
@@ -3331,7 +3640,7 @@ class VPNBot:
                     panel_username = context.user_data['panel_username']
                     panel_password = context.user_data['panel_password']
                     
-                    await update.message.reply_text("⏳ در حال دریافت لیست گروه‌ها...")
+                    await update.message.reply_text("⏳ **در حال برقراری ارتباط با پنل و دریافت لیست گروه‌ها...**")
                     
                     try:
                         from pasargad_manager import PasargadPanelManager
@@ -3343,7 +3652,11 @@ class VPNBot:
                         if temp_panel.login():
                             groups = temp_panel.get_groups()
                             if not groups:
-                                await update.message.reply_text("❌ هیچ گروهی یافت نشد.")
+                                await update.message.reply_text(
+                                    "❌ **هیچ گروهی یافت نشد!**\n"
+                                    "لطفاً ابتدا در پنل پاسارگاد خود یک گروه ایجاد کنید.",
+                                    reply_markup=cancel_markup
+                                )
                                 return
                             
                             keyboard = []
@@ -3353,41 +3666,48 @@ class VPNBot:
                                     callback_data=f"select_group_for_panel_{group['id']}"
                                 )])
                             
-                            keyboard.append([InlineKeyboardButton("❌ لغو", callback_data="manage_panels")])
+                            keyboard.append([InlineKeyboardButton("❌ انصراف و بازگشت", callback_data="manage_panels")])
                             reply_markup = InlineKeyboardMarkup(keyboard)
                             
                             await update.message.reply_text(
-                                "📂 **لطفاً گروه اصلی (Main Group) را انتخاب کنید:**\n\n"
-                                "کاربران جدید در این گروه ساخته خواهند شد.",
+                                "📂 **انتخاب گروه کاربری (Pasargad)**\n\n"
+                                "لطفاً گروهی که می‌خواهید کاربران جدید در آن ساخته شوند را انتخاب کنید.\n"
+                                "تمامی تنظیمات محدودیت و پروتکل‌ها از این گروه اعمال خواهد شد.",
                                 reply_markup=reply_markup,
                                 parse_mode='Markdown'
                             )
                         else:
-                            await update.message.reply_text("❌ خطا در اتصال به پنل. لطفاً اطلاعات را بررسی کنید.")
+                            await update.message.reply_text(
+                                "❌ **خطا در اتصال به پنل!**\n\n"
+                                "امکان ورود به پنل با اطلاعات وارد شده وجود ندارد.\n"
+                                "لطفاً آدرس، نام کاربری و رمز عبور را بررسی کرده و مجدداً تلاش کنید.",
+                                reply_markup=cancel_markup
+                            )
                             context.user_data.clear()
                             return
                             
                     except Exception as e:
                         logger.error(f"Error fetching Pasargad groups: {e}")
-                        await update.message.reply_text(f"❌ خطا: {str(e)}")
+                        await update.message.reply_text(f"❌ خطا در دریافت اطلاعات: {str(e)}", reply_markup=cancel_markup)
                         context.user_data.clear()
                         return
 
                 # For Marzban and Rebecca, ask for protocol instead of inbound
-                elif panel_type in ['marzban', 'rebecca']:
-                    text = "🔗 **انتخاب پروتکل برای ساخت کلاینت‌ها:**\n\n"
-                    text += "کاربران از تمامی inbound های پروتکل انتخابی استفاده خواهند کرد.\n\n"
+                elif panel_type in ['marzban', 'rebecca', 'marzneshin']:
+                    text_msg = "🔗 **انتخاب پروتکل اتصال**\n\n"
+                    text_msg += "لطفاً پروتکل اصلی که می‌خواهید برای کاربران استفاده شود را انتخاب کنید.\n"
+                    text_msg += "ربات به صورت خودکار از تمامی Inboundهای موجود برای این پروتکل استفاده خواهد کرد.\n\n"
                     
                     keyboard = [
                         [InlineKeyboardButton("🔵 VLESS", callback_data="select_protocol_for_panel_vless")],
                         [InlineKeyboardButton("🟢 VMess", callback_data="select_protocol_for_panel_vmess")],
                         [InlineKeyboardButton("🟣 Trojan", callback_data="select_protocol_for_panel_trojan")],
-                        [InlineKeyboardButton("❌ لغو", callback_data="manage_panels")]
+                        [InlineKeyboardButton("❌ انصراف و بازگشت", callback_data="manage_panels")]
                     ]
                     reply_markup = InlineKeyboardMarkup(keyboard)
                     
                     await update.message.reply_text(
-                        text,
+                        text_msg,
                         reply_markup=reply_markup,
                         parse_mode='Markdown'
                     )
@@ -3397,6 +3717,8 @@ class VPNBot:
                     panel_username = context.user_data['panel_username']
                     panel_password = context.user_data['panel_password']
                     
+                    await update.message.reply_text("⏳ **در حال دریافت لیست Inboundها از پنل...**")
+
                     # Create temporary panel manager for this panel
                     from panel_manager import PanelManager
                     temp_panel = PanelManager()
@@ -3405,42 +3727,63 @@ class VPNBot:
                     temp_panel.username = panel_username
                     temp_panel.password = panel_password
                     
-                    inbounds = temp_panel.get_inbounds()
-                    
-                    if not inbounds:
+                    try:
+                        if not temp_panel.login():
+                            await update.message.reply_text(
+                                "❌ **خطا در اتصال به پنل!**\n\n"
+                                "امکان ورود به پنل با اطلاعات وارد شده وجود ندارد.\n"
+                                "لطفاً آدرس، نام کاربری و رمز عبور را بررسی کرده و مجدداً تلاش کنید.",
+                                reply_markup=cancel_markup
+                            )
+                            context.user_data.clear()
+                            return
+
+                        inbounds = temp_panel.get_inbounds()
+                        
+                        if not inbounds:
+                            await update.message.reply_text(
+                                "❌ **هیچ Inbound فعالی یافت نشد!**\n"
+                                "لطفاً در پنل خود حداقل یک Inbound ایجاد کنید.",
+                                reply_markup=cancel_markup
+                            )
+                            context.user_data.clear()
+                            return
+                        
+                        # Show inbounds for selection
+                        text_msg = "🔗 **انتخاب Inbound پیش‌فرض**\n\n"
+                        text_msg += "لطفاً یکی از Inboundهای زیر را برای ساخت کاربران انتخاب کنید:\n\n"
+                        keyboard = []
+                        
+                        for inbound in inbounds:
+                            inbound_name = inbound.get('remark', f'Inbound {inbound.get("id")}')
+                            inbound_protocol = inbound.get('protocol', 'unknown')
+                            inbound_port = inbound.get('port', 0)
+                            
+                            text_msg += f"🔹 **{inbound_name}** ({inbound_protocol}:{inbound_port})\n"
+                            keyboard.append([InlineKeyboardButton(
+                                f"🔗 {inbound_name} ({inbound_protocol})", 
+                                callback_data=f"select_inbound_for_panel_{inbound.get('id')}"
+                            )])
+                        
+                        keyboard.append([InlineKeyboardButton("❌ انصراف و بازگشت", callback_data="manage_panels")])
+                        reply_markup = InlineKeyboardMarkup(keyboard)
+                        
                         await update.message.reply_text(
-                            f"❌ هیچ inbound فعالی در این پنل 3x-ui یافت نشد. لطفاً پنل را بررسی کنید."
+                            text_msg,
+                            reply_markup=reply_markup,
+                            parse_mode='Markdown'
                         )
+                    except Exception as e:
+                        logger.error(f"Error fetching 3x-ui inbounds: {e}")
+                        await update.message.reply_text(f"❌ خطا در دریافت اطلاعات: {str(e)}", reply_markup=cancel_markup)
                         context.user_data.clear()
                         return
-                    
-                    # Show inbounds for selection
-                    text = "🔗 **انتخاب inbound برای ساخت کلاینت‌ها:**\n\n"
-                    keyboard = []
-                    
-                    for inbound in inbounds:
-                        inbound_name = inbound.get('remark', f'Inbound {inbound.get("id")}')
-                        inbound_protocol = inbound.get('protocol', 'unknown')
-                        inbound_port = inbound.get('port', 0)
-                        
-                        text += f"• **{inbound_name}** ({inbound_protocol}:{inbound_port})\n"
-                        keyboard.append([InlineKeyboardButton(
-                            f"🔗 {inbound_name} ({inbound_protocol})", 
-                            callback_data=f"select_inbound_for_panel_{inbound.get('id')}"
-                        )])
-                    
-                    keyboard.append([InlineKeyboardButton("❌ لغو", callback_data="manage_panels")])
-                    reply_markup = InlineKeyboardMarkup(keyboard)
-                    
-                    await update.message.reply_text(
-                        text,
-                        reply_markup=reply_markup,
-                        parse_mode='Markdown'
-                    )
                 
             except ValueError:
                 await update.message.reply_text(
-                    "❌ قیمت نامعتبر است. لطفاً عدد صحیح وارد کنید:"
+                    "❌ **قیمت نامعتبر است!**\n\n"
+                    "لطفاً فقط عدد وارد کنید (بدون حروف یا علامت).",
+                    reply_markup=cancel_markup
                 )
                 return
     
@@ -4656,7 +4999,8 @@ class VPNBot:
             success = panel_manager.update_client_traffic(
                 service['inbound_id'], 
                 service['client_uuid'], 
-                new_total_gb
+                new_total_gb,
+                client_name=service.get('client_name')
             )
             
             if success:
@@ -4859,7 +5203,8 @@ class VPNBot:
             success = panel_manager.update_client_traffic(
                 service['inbound_id'],
                 service['client_uuid'],
-                new_total_gb
+                new_total_gb,
+                client_name=service.get('client_name')
             )
             
             if not success:
@@ -9105,23 +9450,46 @@ class VPNBot:
             if sale_type == 'gigabyte':
                 price_per_gb = panel.get('price_per_gb', 1000) or 1000
                 
-                message = f"""
+                # Get user's reseller discount
+                user_id = update.effective_user.id
+                _, discount_rate, is_reseller = self.get_discounted_price(price_per_gb, user_id)
+                
+                # Build message with discount info
+                if is_reseller and discount_rate > 0:
+                    discounted_price = int(price_per_gb * (1 - discount_rate / 100))
+                    message = f"""
+🌐 انتخاب حجم سرویس
+
+📍 سرور: {panel['name']}
+💎 نرخ اصلی: ~~{price_per_gb:,}~~ تومان / گیگابایت
+🔥 نرخ ویژه نماینده: {discounted_price:,} تومان / گیگابایت
+📉 تخفیف شما: {discount_rate:.0f}%
+
+⬇️ حجم مورد نظر خود را انتخاب کنید:
+                    """
+                else:
+                    message = f"""
 🌐 انتخاب حجم سرویس
 
 📍 سرور: {panel['name']}
 💎 نرخ: {price_per_gb:,} تومان / گیگابایت
 
 ⬇️ حجم مورد نظر خود را انتخاب کنید:
-                """
+                    """
                 
-                reply_markup = ButtonLayout.create_volume_suggestions(panel_id, price_per_gb)
+                reply_markup = ButtonLayout.create_volume_suggestions(panel_id, price_per_gb, discount_rate)
                 
                 if query:
                     try:
-                        await query.edit_message_text(message, reply_markup=reply_markup)
+                        await query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
                     except BadRequest as e:
                         if "not modified" not in str(e).lower():
-                            raise
+                            # Try without markdown
+                            try:
+                                plain_message = message.replace('~~', '')
+                                await query.edit_message_text(plain_message, reply_markup=reply_markup)
+                            except:
+                                raise
                 else:
                     await update.message.reply_text(message, reply_markup=reply_markup)
                 return
@@ -9134,16 +9502,34 @@ class VPNBot:
             # Default to gigabyte for backward compatibility
             price_per_gb = panel.get('price_per_gb', 1000) or 1000
             
-            message = f"""
+            # Get user's reseller discount
+            user_id = update.effective_user.id
+            _, discount_rate, is_reseller = self.get_discounted_price(price_per_gb, user_id)
+            
+            # Build message with discount info
+            if is_reseller and discount_rate > 0:
+                discounted_price = int(price_per_gb * (1 - discount_rate / 100))
+                message = f"""
+🌐 انتخاب حجم سرویس
+
+📍 سرور: {panel['name']}
+💎 نرخ اصلی: {price_per_gb:,} تومان / گیگابایت
+🔥 نرخ ویژه نماینده: {discounted_price:,} تومان / گیگابایت
+📉 تخفیف شما: {discount_rate:.0f}%
+
+⬇️ حجم مورد نظر خود را انتخاب کنید:
+                """
+            else:
+                message = f"""
 🌐 انتخاب حجم سرویس
 
 📍 سرور: {panel['name']}
 💎 نرخ: {price_per_gb:,} تومان / گیگابایت
 
 ⬇️ حجم مورد نظر خود را انتخاب کنید:
-            """
+                """
             
-            reply_markup = ButtonLayout.create_volume_suggestions(panel_id, price_per_gb)
+            reply_markup = ButtonLayout.create_volume_suggestions(panel_id, price_per_gb, discount_rate)
             
             if query:
                 try:
@@ -9178,16 +9564,34 @@ class VPNBot:
             
             price_per_gb = panel.get('price_per_gb', 1000) or 1000
             
-            message = f"""
+            # Get user's reseller discount
+            user_id = update.effective_user.id
+            _, discount_rate, is_reseller = self.get_discounted_price(price_per_gb, user_id)
+            
+            # Build message with discount info
+            if is_reseller and discount_rate > 0:
+                discounted_price = int(price_per_gb * (1 - discount_rate / 100))
+                message = f"""
+🌐 انتخاب حجم سرویس
+
+📍 سرور: {panel['name']}
+💎 نرخ اصلی: {price_per_gb:,} تومان / گیگابایت
+🔥 نرخ ویژه نماینده: {discounted_price:,} تومان / گیگابایت
+📉 تخفیف شما: {discount_rate:.0f}%
+
+⬇️ حجم مورد نظر خود را انتخاب کنید:
+                """
+            else:
+                message = f"""
 🌐 انتخاب حجم سرویس
 
 📍 سرور: {panel['name']}
 💎 نرخ: {price_per_gb:,} تومان / گیگابایت
 
 ⬇️ حجم مورد نظر خود را انتخاب کنید:
-            """
+                """
             
-            reply_markup = ButtonLayout.create_volume_suggestions(panel_id, price_per_gb)
+            reply_markup = ButtonLayout.create_volume_suggestions(panel_id, price_per_gb, discount_rate)
             
             await query.edit_message_text(message, reply_markup=reply_markup)
             
@@ -9332,8 +9736,24 @@ class VPNBot:
             
             message = f"📦 **محصولات - پنل {panel['name']}:**\n\n"
             
+            # Get user's reseller discount
+            user_id = update.effective_user.id
+            _, discount_rate, is_reseller = self.get_discounted_price(1000, user_id)
+            
+            if is_reseller and discount_rate > 0:
+                message += f"🔥 تخفیف ویژه نماینده: {discount_rate:.0f}%\n\n"
+            
             keyboard = []
             for prod in products:
+                original_price = prod['price']
+                
+                # Apply discount for resellers
+                if is_reseller and discount_rate > 0:
+                    discounted_price = int(original_price * (1 - discount_rate / 100))
+                    price_text = f"🔥 {discounted_price:,}"
+                else:
+                    price_text = f"💰 {original_price:,}"
+                
                 # Create three buttons side by side: name, price, days
                 keyboard.append([
                     InlineKeyboardButton(
@@ -9341,7 +9761,7 @@ class VPNBot:
                         callback_data=f"buy_product_{prod['id']}"
                     ),
                     InlineKeyboardButton(
-                        f"💰 {prod['price']:,}",
+                        price_text,
                         callback_data=f"buy_product_{prod['id']}"
                     ),
                     InlineKeyboardButton(
@@ -9402,8 +9822,24 @@ class VPNBot:
             
             message = f"📦 **محصولات دسته‌بندی '{category['name']}' - پنل {panel_name}:**\n\n"
             
+            # Get user's reseller discount
+            user_id = update.effective_user.id
+            _, discount_rate, is_reseller = self.get_discounted_price(1000, user_id)
+            
+            if is_reseller and discount_rate > 0:
+                message += f"🔥 تخفیف ویژه نماینده: {discount_rate:.0f}%\n\n"
+            
             keyboard = []
             for prod in products:
+                original_price = prod['price']
+                
+                # Apply discount for resellers
+                if is_reseller and discount_rate > 0:
+                    discounted_price = int(original_price * (1 - discount_rate / 100))
+                    price_text = f"🔥 {discounted_price:,}"
+                else:
+                    price_text = f"💰 {original_price:,}"
+                
                 # Create three buttons side by side: name, price, days
                 keyboard.append([
                     InlineKeyboardButton(
@@ -9411,7 +9847,7 @@ class VPNBot:
                         callback_data=f"buy_product_{prod['id']}"
                     ),
                     InlineKeyboardButton(
-                        f"💰 {prod['price']:,}",
+                        price_text,
                         callback_data=f"buy_product_{prod['id']}"
                     ),
                     InlineKeyboardButton(
@@ -9451,7 +9887,11 @@ class VPNBot:
                 await query.edit_message_text("❌ کاربر یافت نشد.")
                 return
             
-            total_price = product['price']
+            original_price = product['price']
+            
+            # Apply reseller discount
+            discounted_price, discount_rate, is_reseller = self.get_discounted_price(original_price, user_id)
+            total_price = discounted_price
             
             # Store purchase info for discount code entry
             context.user_data['purchase_panel_id'] = product['panel_id']
@@ -9460,6 +9900,13 @@ class VPNBot:
             context.user_data['purchase_type'] = 'plan'  # Mark as plan purchase
             
             # Show product details and discount code entry screen
+            if is_reseller and discount_rate > 0:
+                price_display = f"""
+💵 **مبلغ اصلی:** ~~{original_price:,}~~ تومان
+🔥 **مبلغ با تخفیف نماینده ({discount_rate:.0f}%):** {total_price:,} تومان"""
+            else:
+                price_display = f"💵 **مبلغ کل:** {total_price:,} تومان"
+            
             message = f"""
 💳 **فاکتور خرید سرویس**
 
@@ -9467,7 +9914,7 @@ class VPNBot:
 📦 **محصول:** {escape_markdown(product['name'], version=1)}
 📊 **حجم:** {product['volume_gb']} گیگابایت
 ⏱️ **مدت زمان:** {product['duration_days']} روز
-💵 **مبلغ کل:** {total_price:,} تومان
+{price_display}
 
 🎁 اگر کد تخفیف دارید، از دکمه زیر استفاده کنید:
             """
@@ -9480,7 +9927,12 @@ class VPNBot:
             
             reply_markup = InlineKeyboardMarkup(keyboard)
             
-            await query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+            try:
+                await query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+            except BadRequest:
+                # Try without markdown strikethrough
+                message_plain = message.replace('~~', '')
+                await query.edit_message_text(message_plain, reply_markup=reply_markup)
             
         except Exception as e:
             logger.error(f"Error handling buy product: {e}")
@@ -12987,7 +13439,16 @@ class VPNBot:
         
         # Calculate price using panel's price_per_gb
         price_per_gb = panel.get('price_per_gb', 1000) or 1000
-        price = volume_gb * price_per_gb
+        original_price = volume_gb * price_per_gb
+        
+        # Apply reseller discount
+        user_id = update.effective_user.id
+        discounted_price, discount_rate, is_reseller = self.get_discounted_price(original_price, user_id)
+        price = discounted_price
+        
+        # Store discount info for later use
+        context.user_data['reseller_discount_rate'] = discount_rate if is_reseller else 0
+        context.user_data['original_price_before_reseller_discount'] = original_price
         
         # Clear any previously applied discount code when volume changes
         # (discount was calculated for the old volume/price)
@@ -13914,7 +14375,7 @@ class VPNBot:
             with self.db.get_connection() as conn:
                 cursor = conn.cursor(dictionary=True)
                 cursor.execute('''
-                    SELECT id, inbound_id, client_uuid, total_gb, panel_id
+                    SELECT id, inbound_id, client_uuid, client_name, total_gb, panel_id
                     FROM clients 
                     WHERE id = %s AND user_id = %s
                 ''', (service_id, user['id']))
@@ -13936,11 +14397,17 @@ class VPNBot:
                 await query.edit_message_text("❌ خطا در اتصال به پنل.")
                 return
 
+            logger.info(f"🔄 Updating panel traffic: service_id={service_id}, current={current_total_gb}GB, adding={volume_gb}GB, new_total={new_total_gb}GB")
+            logger.info(f"📋 Service details: client_uuid={service['client_uuid']}, client_name={service.get('client_name')}, inbound_id={service['inbound_id']}")
+            
             result = pm.update_client_traffic(
                 service['inbound_id'],
                 service['client_uuid'],
-                new_total_gb
+                new_total_gb,
+                client_name=service.get('client_name')
             )
+            
+            logger.info(f"{'✅' if result else '❌'} Panel update result: {result}")
             
             if result:
                 # Update database
@@ -13957,6 +14424,8 @@ class VPNBot:
                         WHERE id = %s
                     ''', (new_total_gb, service_id))
                     conn.commit()
+                
+                logger.info(f"✅ Database updated successfully for service {service_id}")
                 
                 # Deduct balance
                 self.db.update_user_balance(
@@ -14026,7 +14495,12 @@ class VPNBot:
                 context.user_data.pop('discount_amount', None)
                 context.user_data.pop('original_amount', None)
             else:
-                await query.edit_message_text("❌ خطا در افزایش حجم. لطفاً دوباره تلاش کنید.")
+                logger.error(f"❌ Panel update failed for service {service_id}. Panel manager returned False.")
+                await query.edit_message_text(
+                    "❌ **خطا در بروزرسانی پنل**\n\n"
+                    "حجم در پنل اضافه نشد. لطفاً با پشتیبانی تماس بگیرید.\n\n"
+                    f"🆔 شناسه سرویس: {service_id}"
+                )
                 
         except Exception as e:
             logger.error(f"Error handling balance add volume payment: {e}", exc_info=True)
@@ -15296,6 +15770,23 @@ class VPNBot:
                 await query.answer("❌ فاکتور یافت نشد.", show_alert=True)
                 return
             
+            # Check if already approved or rejected
+            receipt_status = invoice.get('receipt_status')
+            if receipt_status == 'approved':
+                await query.answer("⚠️ این رسید قبلاً تایید شده است.", show_alert=True)
+                # Update message to show it's already approved
+                try:
+                    await query.edit_message_caption(
+                        caption=query.message.caption + "\n\n✅ **قبلاً تایید شده**"
+                    )
+                except:
+                    pass
+                return
+            
+            if receipt_status == 'rejected':
+                await query.answer("⚠️ این رسید قبلاً رد شده است و امکان تغییر وجود ندارد.", show_alert=True)
+                return
+            
             if invoice['status'] == 'paid' or invoice['status'] == 'completed':
                 await query.answer("⚠️ این فاکتور قبلاً پرداخت شده است.", show_alert=True)
                 return
@@ -15305,8 +15796,19 @@ class VPNBot:
             amount = invoice['amount']
             purchase_type = invoice.get('purchase_type', 'balance')
             
-            # 1. Update invoice status to paid
-            self.db.update_invoice_status(invoice_id, 'paid', payment_method='card', transaction_id=f"card_{invoice_id}")
+            # 1. Update invoice status to paid and receipt status (only if not already approved/rejected)
+            with self.db.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    UPDATE invoices 
+                    SET status = 'paid', receipt_status = 'approved', paid_at = NOW()
+                    WHERE id = %s AND receipt_status != 'approved' AND receipt_status != 'rejected'
+                ''', (invoice_id,))
+                if cursor.rowcount == 0:
+                    await query.answer("⚠️ این رسید قبلاً تایید یا رد شده است.", show_alert=True)
+                    return
+                conn.commit()
+                cursor.close()
             
             # 2. Fulfill order
             user = self.db.get_user_by_id(user_id)
@@ -15458,15 +15960,81 @@ class VPNBot:
             except Exception as e:
                 logger.error(f"Could not send notification to user {user_id}: {e}")
             
+            # Update invoice receipt status
+            with self.db.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    UPDATE invoices 
+                    SET receipt_status = 'rejected', status = 'rejected'
+                    WHERE id = %s AND receipt_status != 'approved' AND receipt_status != 'rejected'
+                ''', (invoice_id,))
+                if cursor.rowcount == 0:
+                    await query.answer("⚠️ این رسید قبلاً تایید یا رد شده است.", show_alert=True)
+                    return
+                conn.commit()
+                cursor.close()
+            
             # Update message in channel
-            await query.edit_message_caption(
-                caption=query.message.caption + "\n\n❌ **رد شد** توسط " + update.effective_user.first_name
-            )
+            try:
+                await query.edit_message_caption(
+                    caption=query.message.caption + "\n\n❌ **رد شد** توسط " + update.effective_user.first_name
+                )
+            except Exception:
+                pass  # Message might not be editable
             
         except Exception as e:
             logger.error(f"Error rejecting receipt: {e}")
             await query.answer("❌ خطا در رد پرداخت.", show_alert=True)
 
+
+    async def handle_protocol_selection_for_panel(self, update: Update, context: ContextTypes.DEFAULT_TYPE, protocol: str):
+        """Handle protocol selection for Marzban/Rebecca/Marzneshin panel"""
+        query = update.callback_query
+        await query.answer()
+        
+        try:
+            # Retrieve panel details from user_data
+            panel_name = context.user_data.get('panel_name')
+            panel_url = context.user_data.get('panel_url')
+            panel_username = context.user_data.get('panel_username')
+            panel_password = context.user_data.get('panel_password')
+            panel_sub_url = context.user_data.get('panel_subscription_url')
+            panel_price = context.user_data.get('panel_price')
+            panel_type = context.user_data.get('panel_type')
+            
+            # Save to database
+            extra_config = {'inbound_protocol': protocol}
+            
+            panel_id = self.db.add_panel(
+                name=panel_name,
+                url=panel_url,
+                username=panel_username,
+                password=panel_password,
+                api_endpoint=panel_url,
+                subscription_url=panel_sub_url,
+                price_per_gb=panel_price,
+                panel_type=panel_type,
+                extra_config=extra_config
+            )
+            
+            if panel_id:
+                await query.edit_message_text(
+                    f"✅ پنل **{panel_name}** با موفقیت اضافه شد!\n\n"
+                    f"نوع: {panel_type}\n"
+                    f"پروتکل: {protocol}",
+                    reply_markup=ButtonLayout.create_back_button("manage_panels"),
+                    parse_mode='Markdown'
+                )
+                context.user_data.clear()
+            else:
+                await query.edit_message_text(
+                    "❌ خطا در ذخیره پنل در دیتابیس.",
+                    reply_markup=ButtonLayout.create_back_button("manage_panels")
+                )
+                
+        except Exception as e:
+            logger.error(f"Error handling protocol selection: {e}")
+            await query.edit_message_text("❌ خطا در پردازش درخواست.")
 
     async def handle_group_selection_for_panel(self, update: Update, context: ContextTypes.DEFAULT_TYPE, group_id: str):
         """Handle group selection for Pasargad panel"""
@@ -15519,6 +16087,111 @@ class VPNBot:
 
 
 
+    async def handle_bot_info_settings(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Show bot info settings menu"""
+        query = update.callback_query
+        await query.answer()
+        
+        user_id = update.effective_user.id
+        if not self.db.is_admin(user_id):
+            await query.edit_message_text("❌ دسترسی غیرمجاز.")
+            return
+            
+        text = """
+🤖 **تنظیمات اطلاعات ربات**
+
+در این بخش می‌توانید تنظیمات عمومی ربات را تغییر دهید.
+لطفاً گزینه مورد نظر را برای ویرایش انتخاب کنید:
+        """
+        
+        # Create keyboard dynamically based on settings
+        settings_map = {
+            'channel_id': '📢 کانال اصلی',
+            'reports_channel_id': '📝 کانال گزارشات',
+            'receipts_channel_id': '🧾 کانال رسیدها',
+            'referral_reward_amount': '🎁 هدیه معرفی',
+            'registration_gift_amount': '🎁 هدیه ثبت نام',
+            'website_url': '🌐 وب‌سایت',
+            'webapp_url': '📱 وب‌اپلیکیشن'
+        }
+        
+        keyboard = []
+        for key, label in settings_map.items():
+            current_value = self.settings_manager.get_setting(key)
+            # Truncate long values
+            display_value = str(current_value)
+            if len(display_value) > 20:
+                display_value = display_value[:17] + "..."
+            
+            keyboard.append([InlineKeyboardButton(f"{label}: {display_value}", callback_data=f"edit_setting_{key}")])
+            
+        keyboard.append([InlineKeyboardButton("🔙 بازگشت", callback_data="admin_panel")])
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.edit_message_text(text, reply_markup=reply_markup, parse_mode='Markdown')
+
+    async def handle_edit_setting(self, update: Update, context: ContextTypes.DEFAULT_TYPE, key: str):
+        """Handle editing a specific setting"""
+        query = update.callback_query
+        await query.answer()
+        
+        settings_map = {
+            'channel_id': '📢 کانال اصلی (جوین اجباری)',
+            'reports_channel_id': '📝 کانال گزارشات',
+            'receipts_channel_id': '🧾 کانال رسیدها',
+            'referral_reward_amount': '🎁 هدیه معرفی (تومان)',
+            'registration_gift_amount': '🎁 هدیه ثبت نام (تومان)',
+            'website_url': '🌐 آدرس وب‌سایت',
+            'webapp_url': '📱 آدرس وب‌اپلیکیشن'
+        }
+        
+        label = settings_map.get(key, key)
+        current_value = self.settings_manager.get_setting(key)
+        
+        text = f"""
+✏️ **ویرایش {label}**
+
+مقدار فعلی: `{current_value}`
+
+لطفاً مقدار جدید را ارسال کنید.
+برای انصراف /cancel را ارسال کنید.
+        """
+        
+        context.user_data['editing_setting'] = True
+        context.user_data['setting_key'] = key
+        
+        await query.edit_message_text(text, parse_mode='Markdown')
+
+    async def handle_save_setting(self, update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
+        """Save the edited setting"""
+        if text.lower() == '/cancel':
+            await update.message.reply_text("❌ عملیات لغو شد.")
+            context.user_data.clear()
+            return
+
+        key = context.user_data.get('setting_key')
+        if not key:
+            await update.message.reply_text("❌ خطای سیستمی.")
+            context.user_data.clear()
+            return
+            
+        # Validate input if needed
+        if key in ['referral_reward_amount', 'registration_gift_amount']:
+            if not text.isdigit():
+                await update.message.reply_text("❌ لطفاً یک عدد معتبر وارد کنید.")
+                return
+            value = int(text)
+        else:
+            value = text
+            
+        # Save setting
+        if self.settings_manager.set_setting(key, value, updated_by=update.effective_user.id):
+            await update.message.reply_text(f"✅ تنظیمات با موفقیت ذخیره شد!\n\nمقدار جدید: `{value}`", parse_mode='Markdown')
+        else:
+            await update.message.reply_text("❌ خطا در ذخیره تنظیمات.")
+            
+        context.user_data.clear()
+
     async def handle_system_settings(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Show system settings menu"""
         query = update.callback_query
@@ -15534,10 +16207,9 @@ class VPNBot:
 
 لطفاً گزینه مورد نظر را انتخاب کنید:
 
-🔄 **آپدیت سیستم:** دریافت آخرین نسخه ربات و وب اپلیکیشن
 💾 **بکاپ دیتابیس:** تهیه و ارسال فایل پشتیبان دیتابیس
-🧹 **بهینه‌سازی:** بهینه‌سازی جداول و ایندکس‌های دیتابیس
 📊 **وضعیت سیستم:** مشاهده منابع مصرفی سرور
+📋 **لاگ‌های سیستم:** مشاهده آخرین لاگ‌های ربات
 🔄 **ریستارت:** راه‌اندازی مجدد سرویس‌ها
         """
         
@@ -15564,26 +16236,11 @@ class VPNBot:
             return
 
         # Handle actions
-        if action == "update":
-            await query.answer("⏳ در حال شروع آپدیت...", show_alert=True)
-            success, msg = await self.system_manager.update_system()
-            if success:
-                await query.edit_message_text(msg)
-            else:
-                await query.message.reply_text(msg)
-                
-        elif action == "backup":
+        if action == "backup":
             await query.answer("⏳ در حال تهیه بکاپ...", show_alert=True)
             await query.edit_message_text("⏳ در حال تهیه و ارسال بکاپ دیتابیس...\nلطفاً صبر کنید.")
             success, msg = await self.system_manager.backup_database()
             # Return to menu
-            reply_markup = ButtonLayout.create_back_button("system_settings")
-            await query.edit_message_text(msg, reply_markup=reply_markup)
-            
-        elif action == "optimize":
-            await query.answer("⏳ در حال بهینه‌سازی...", show_alert=True)
-            await query.edit_message_text("⏳ در حال بهینه‌سازی دیتابیس...")
-            success, msg = await self.system_manager.optimize_database()
             reply_markup = ButtonLayout.create_back_button("system_settings")
             await query.edit_message_text(msg, reply_markup=reply_markup)
             
@@ -15592,11 +16249,6 @@ class VPNBot:
             status_text = await self.system_manager.get_system_status()
             reply_markup = ButtonLayout.create_back_button("system_settings")
             await query.edit_message_text(status_text, reply_markup=reply_markup, parse_mode='Markdown')
-            
-        elif action == "restart":
-            await query.answer("⏳ در حال ریستارت...", show_alert=True)
-            success, msg = await self.system_manager.restart_services()
-            await query.edit_message_text(msg)
             
         elif action == "logs":
             await query.answer("⏳ دریافت لاگ‌ها...", show_alert=True)
@@ -15623,6 +16275,11 @@ class VPNBot:
                 except Exception:
                     # Fallback if markdown fails (e.g. special chars)
                     await query.edit_message_text(f"📋 لاگ‌های سیستم:\n\n{logs}", reply_markup=reply_markup)
+
+        elif action == "restart":
+            await query.answer("⏳ در حال ریستارت...", show_alert=True)
+            success, msg = await self.system_manager.restart_services()
+            await query.edit_message_text(msg)
 
         else:
             await query.answer("❌ دستور نامعتبر.", show_alert=True)

@@ -16,19 +16,25 @@
             <h2 style="font-size: 1.5rem; font-weight: 800; margin: 0; color: var(--p-text-main);">پروفایل کاربر</h2>
         </div>
 
-        <div style="display: flex; gap: var(--sp-sm);">
+        <div style="display: flex; gap: var(--sp-sm); flex-wrap: wrap;">
             <button onclick="loginAsUser({{ user.id }})" class="btn btn-primary">
                 <i class="fas fa-sign-in-alt"></i>
                 <span>ورود به پنل کاربر</span>
             </button>
-            <button onclick="toggleUserBan({{ user.id }}, {{ 'false' if user.is_banned else 'true' }})"
-                class="btn {% if user.is_banned %}btn-success{% else %}btn-warning{% endif %}">
-                <i class="fas {% if user.is_banned %}fa-unlock{% else %}fa-ban{% endif %}"></i>
-                <span>{% if user.is_banned %}رفع مسدودیت{% else %}مسدود کردن{% endif %}</span>
+            <button onclick="showSendMessageModal()" class="btn btn-info" style="background: var(--p-info); border-color: var(--p-info); color: white;">
+                <i class="fas fa-paper-plane"></i>
+                <span>ارسال پیام</span>
             </button>
-            <button onclick="deleteUser({{ user.id }})" class="btn btn-outline"
-                style="color: var(--p-error); border-color: var(--p-error);">
+            <button onclick="showBanUserModal({{ user.id }}, {{ 'true' if user.get('is_banned') else 'false' }})"
+                class="btn {% if user.get('is_banned') %}btn-success{% else %}btn-warning{% endif %}"
+                style="{% if user.get('is_banned') %}background: var(--p-success); border-color: var(--p-success); color: white;{% else %}background: var(--p-warning); border-color: var(--p-warning); color: white;{% endif %}">
+                <i class="fas {% if user.get('is_banned') %}fa-unlock{% else %}fa-ban{% endif %}"></i>
+                <span>{% if user.get('is_banned') %}رفع مسدودیت{% else %}مسدود کردن{% endif %}</span>
+            </button>
+            <button onclick="showDeleteUserModal({{ user.id }})" class="btn btn-danger"
+                style="background: var(--p-error); border-color: var(--p-error); color: white;">
                 <i class="fas fa-trash"></i>
+                <span>حذف کاربر</span>
             </button>
         </div>
     </div>
@@ -53,7 +59,7 @@
                         {% endif %}
                     </div>
                     <div
-                        style="position: absolute; bottom: 5px; right: 5px; width: 20px; height: 20px; border-radius: 50%; background: {% if user.is_banned %}var(--p-error){% else %}var(--p-success){% endif %}; border: 3px solid var(--p-bg-card);">
+                        style="position: absolute; bottom: 5px; right: 5px; width: 20px; height: 20px; border-radius: 50%; background: {% if user.get('is_banned') %}var(--p-error){% else %}var(--p-success){% endif %}; border: 3px solid var(--p-bg-card);">
                     </div>
                 </div>
 
@@ -95,14 +101,13 @@
                     </div>
                 </div>
                 <div style="display: flex; gap: var(--sp-sm);">
-                    <button onclick="showAddBalanceModal()" class="btn btn-success" style="flex: 1;">
+                    <button onclick="showAddBalanceModal()" class="btn btn-success" style="flex: 1; background: var(--p-success); border-color: var(--p-success); color: white;">
                         <i class="fas fa-plus"></i>
-                        افزایش
+                        <span>افزایش موجودی</span>
                     </button>
-                    <button onclick="showSubtractBalanceModal()" class="btn btn-outline"
-                        style="flex: 1; color: var(--p-error); border-color: var(--p-error);">
+                    <button onclick="showSubtractBalanceModal()" class="btn btn-danger" style="flex: 1; background: var(--p-error); border-color: var(--p-error); color: white;">
                         <i class="fas fa-minus"></i>
-                        کاهش
+                        <span>کاهش موجودی</span>
                     </button>
                 </div>
             </div>
@@ -334,6 +339,87 @@
     </div>
 </div>
 
+<!-- Ban User Modal -->
+<div id="banUserModal" class="modal-overlay">
+    <div class="modal-card">
+        <div class="card-header">
+            <div class="card-title">
+                <i class="fas fa-ban" style="color: var(--p-warning);"></i>
+                <span id="banModalTitle">مسدود کردن کاربر</span>
+            </div>
+            <button onclick="closeModal('banUserModal')" class="close-btn"><i class="fas fa-times"></i></button>
+        </div>
+        <div class="modal-body">
+            <p id="banModalMessage">آیا از مسدود کردن این کاربر اطمینان دارید؟</p>
+            <div style="background: var(--p-bg-hover); padding: var(--sp-md); border-radius: var(--radius-md); margin-top: var(--sp-md);">
+                <div style="font-size: 0.85rem; color: var(--p-text-muted); margin-bottom: var(--sp-xs);">نکته مهم:</div>
+                <ul style="margin: 0; padding-right: var(--sp-lg); font-size: 0.85rem; color: var(--p-text-main);">
+                    <li>دسترسی کاربر به بات و وب اپ قطع خواهد شد</li>
+                    <li>کاربر قادر به استفاده از سرویس‌ها نخواهد بود</li>
+                    <li>می‌توانید در هر زمان مسدودیت را لغو کنید</li>
+                </ul>
+            </div>
+        </div>
+        <div style="display: flex; gap: var(--sp-md); margin-top: var(--sp-lg);">
+            <button type="button" class="btn btn-secondary" onclick="closeModal('banUserModal')" style="flex: 1;">لغو</button>
+            <button type="button" class="btn btn-warning" id="confirmBanBtn" onclick="confirmBanUser()" style="flex: 2; background: var(--p-warning); border-color: var(--p-warning); color: white;">تأیید</button>
+        </div>
+    </div>
+</div>
+
+<!-- Delete User Modal -->
+<div id="deleteUserModal" class="modal-overlay">
+    <div class="modal-card">
+        <div class="card-header">
+            <div class="card-title">
+                <i class="fas fa-exclamation-triangle" style="color: var(--p-error);"></i>
+                حذف کاربر
+            </div>
+            <button onclick="closeModal('deleteUserModal')" class="close-btn"><i class="fas fa-times"></i></button>
+        </div>
+        <div class="modal-body">
+            <p style="color: var(--p-error); font-weight: 700; margin-bottom: var(--sp-md);">⚠️ هشدار: این عملیات غیرقابل بازگشت است!</p>
+            <p>آیا از حذف کامل این کاربر و تمام سرویس‌های او اطمینان دارید؟</p>
+            <div style="background: rgba(239, 68, 68, 0.1); padding: var(--sp-md); border-radius: var(--radius-md); margin-top: var(--sp-md); border: 1px solid var(--p-error);">
+                <div style="font-size: 0.85rem; color: var(--p-error); margin-bottom: var(--sp-xs); font-weight: 700;">موارد حذف شده:</div>
+                <ul style="margin: 0; padding-right: var(--sp-lg); font-size: 0.85rem; color: var(--p-text-main);">
+                    <li>حساب کاربری</li>
+                    <li>تمام سرویس‌های فعال</li>
+                    <li>تاریخچه تراکنش‌ها</li>
+                    <li>تیکت‌های پشتیبانی</li>
+                </ul>
+            </div>
+        </div>
+        <div style="display: flex; gap: var(--sp-md); margin-top: var(--sp-lg);">
+            <button type="button" class="btn btn-secondary" onclick="closeModal('deleteUserModal')" style="flex: 1;">لغو</button>
+            <button type="button" class="btn btn-danger" onclick="confirmDeleteUser()" style="flex: 2; background: var(--p-error); border-color: var(--p-error); color: white;">حذف دائمی</button>
+        </div>
+    </div>
+</div>
+
+<!-- Send Message Modal -->
+<div id="sendMessageModal" class="modal-overlay">
+    <div class="modal-card">
+        <div class="card-header">
+            <div class="card-title">
+                <i class="fas fa-paper-plane" style="color: var(--p-primary);"></i>
+                ارسال پیام شخصی
+            </div>
+            <button onclick="closeModal('sendMessageModal')" class="close-btn"><i class="fas fa-times"></i></button>
+        </div>
+        <form onsubmit="sendPersonalMessage(event)">
+            <div class="form-group">
+                <label class="form-label">متن پیام</label>
+                <textarea name="message" class="form-control" rows="5" required placeholder="پیام خود را وارد کنید..."></textarea>
+            </div>
+            <div style="display: flex; gap: var(--sp-md); margin-top: var(--sp-lg);">
+                <button type="button" class="btn btn-secondary" onclick="closeModal('sendMessageModal')" style="flex: 1;">لغو</button>
+                <button type="submit" class="btn btn-primary" style="flex: 2;">ارسال پیام</button>
+            </div>
+        </form>
+    </div>
+</div>
+
 <style>
     /* Modal Styles */
     .modal-overlay {
@@ -441,32 +527,107 @@
         }
     }
 
-    async function toggleUserBan(id, shouldBan) {
-        if (!confirm(shouldBan ? 'آیا از مسدود کردن این کاربر اطمینان دارید؟' : 'آیا از رفع مسدودیت این کاربر اطمینان دارید؟')) return;
+    let currentBanUserId = null;
+    let currentBanState = false;
 
+    function showBanUserModal(id, isBanned) {
+        currentBanUserId = id;
+        currentBanState = isBanned === 'true' || isBanned === true;
+        
+        const modal = document.getElementById('banUserModal');
+        const title = document.getElementById('banModalTitle');
+        const message = document.getElementById('banModalMessage');
+        const confirmBtn = document.getElementById('confirmBanBtn');
+        
+        if (currentBanState) {
+            title.textContent = 'رفع مسدودیت کاربر';
+            message.textContent = 'آیا از رفع مسدودیت این کاربر اطمینان دارید؟';
+            confirmBtn.textContent = 'رفع مسدودیت';
+            confirmBtn.className = 'btn btn-success';
+            confirmBtn.style.background = 'var(--p-success)';
+            confirmBtn.style.borderColor = 'var(--p-success)';
+        } else {
+            title.textContent = 'مسدود کردن کاربر';
+            message.textContent = 'آیا از مسدود کردن این کاربر اطمینان دارید؟';
+            confirmBtn.textContent = 'مسدود کردن';
+            confirmBtn.className = 'btn btn-warning';
+            confirmBtn.style.background = 'var(--p-warning)';
+            confirmBtn.style.borderColor = 'var(--p-warning)';
+        }
+        
+        modal.style.display = 'flex';
+    }
+
+    async function confirmBanUser() {
+        if (!currentBanUserId) return;
+        
+        const shouldBan = !currentBanState;
+        
         try {
-            await apiCall(`/api/admin/users/${id}/ban`, {
+            const response = await apiCall(`/api/admin/users/${currentBanUserId}/ban`, {
                 method: 'PUT',
                 body: JSON.stringify({ is_banned: shouldBan })
             });
-            showToast(shouldBan ? 'کاربر مسدود شد' : 'رفع مسدودیت انجام شد', 'success');
+            
+            showToast(shouldBan ? 'کاربر با موفقیت مسدود شد' : 'رفع مسدودیت با موفقیت انجام شد', 'success');
+            closeModal('banUserModal');
             setTimeout(() => window.location.reload(), 1000);
         } catch (error) {
             console.error(error);
+            showToast(error.message || 'خطا در انجام عملیات', 'error');
         }
     }
 
-    async function deleteUser(id) {
-        if (!confirm('آیا از حذف کامل این کاربر و تمام سرویس‌های او اطمینان دارید؟ این عملیات غیرقابل بازگشت است.')) return;
+    let currentDeleteUserId = null;
+
+    function showDeleteUserModal(id) {
+        currentDeleteUserId = id;
+        document.getElementById('deleteUserModal').style.display = 'flex';
+    }
+
+    async function confirmDeleteUser() {
+        if (!currentDeleteUserId) return;
 
         try {
-            await apiCall(`/api/admin/users/${id}`, {
+            const response = await apiCall(`/api/admin/users/${currentDeleteUserId}`, {
                 method: 'DELETE'
             });
+            
             showToast('کاربر با موفقیت حذف شد', 'success');
+            closeModal('deleteUserModal');
             setTimeout(() => window.location.href = '/admin/users', 1000);
         } catch (error) {
             console.error(error);
+            showToast(error.message || 'خطا در حذف کاربر', 'error');
+        }
+    }
+
+    function showSendMessageModal() {
+        document.getElementById('sendMessageModal').style.display = 'flex';
+    }
+
+    async function sendPersonalMessage(event) {
+        event.preventDefault();
+        const form = event.target;
+        const message = form.message.value.trim();
+        
+        if (!message) {
+            showToast('لطفاً متن پیام را وارد کنید', 'error');
+            return;
+        }
+
+        try {
+            const response = await apiCall(`/api/admin/users/${userId}/message`, {
+                method: 'POST',
+                body: JSON.stringify({ message: message })
+            });
+            
+            showToast('پیام با موفقیت ارسال شد', 'success');
+            closeModal('sendMessageModal');
+            form.reset();
+        } catch (error) {
+            console.error(error);
+            showToast(error.message || 'خطا در ارسال پیام', 'error');
         }
     }
 

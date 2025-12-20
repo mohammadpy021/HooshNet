@@ -75,11 +75,13 @@ read -p "Enter Channel Link (e.g., https://t.me/MyChannel): " CHANNEL_LINK
 read -p "Enter Reports Channel ID (numeric, optional, press Enter to skip): " REPORTS_CHANNEL_ID
 REPORTS_CHANNEL_ID=${REPORTS_CHANNEL_ID:-0}
 
-read -p "Enter Receipts Channel ID (numeric, for payment slips): " RECEIPTS_CHANNEL_ID
-while [[ ! "$RECEIPTS_CHANNEL_ID" =~ ^-?[0-9]+$ ]]; do
-    echo -e "${RED}Receipts Channel ID must be a number.${NC}"
-    read -p "Enter Receipts Channel ID: " RECEIPTS_CHANNEL_ID
-done
+read -p "Enter Receipts Channel ID (numeric, optional - press Enter to skip): " RECEIPTS_CHANNEL_ID
+if [[ -z "$RECEIPTS_CHANNEL_ID" ]]; then
+    RECEIPTS_CHANNEL_ID=0
+elif [[ ! "$RECEIPTS_CHANNEL_ID" =~ ^-?[0-9]+$ ]]; then
+    echo -e "${YELLOW}Invalid format, setting to 0 (disabled).${NC}"
+    RECEIPTS_CHANNEL_ID=0
+fi
 
 # Payment configuration removed as per request
 
@@ -181,6 +183,9 @@ echo -e "${YELLOW}[6/7] Configuring Nginx and SSL...${NC}"
 cat > /etc/nginx/sites-available/vpn_bot << EOL
 server {
     server_name $DOMAIN;
+    
+    # Increase max upload size to 10MB for receipt uploads
+    client_max_body_size 10M;
 
     location / {
         proxy_pass http://127.0.0.1:5000;
@@ -188,6 +193,9 @@ server {
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_read_timeout 300s;
+        proxy_connect_timeout 300s;
+        proxy_send_timeout 300s;
     }
 }
 EOL
@@ -261,6 +269,30 @@ EOL
 systemctl daemon-reload
 systemctl enable vpn-bot
 systemctl enable vpn-webapp
+
+# Start services
+echo -e "${YELLOW}Starting services...${NC}"
+systemctl start vpn-bot
+sleep 3
+systemctl start vpn-webapp
+sleep 5
+
+# Initialize default texts
+echo -e "${YELLOW}Initializing default texts...${NC}"
+sleep 2
+"$PROJECT_DIR/venv/bin/python" -c "
+import sys
+sys.path.insert(0, '$PROJECT_DIR')
+from professional_database import ProfessionalDatabaseManager
+from text_manager import TextManager
+try:
+    db = ProfessionalDatabaseManager()
+    text_manager = TextManager(db)
+    count = text_manager.initialize_default_texts(db)
+    print(f'✓ Initialized {count} default texts')
+except Exception as e:
+    print(f'⚠ Warning: Could not initialize texts: {e}')
+"
 
 echo ""
 echo -e "${BLUE}=================================================================${NC}"
