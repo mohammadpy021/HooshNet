@@ -215,10 +215,15 @@ create_config() {
         print_info "Generated Database Root Password: $DB_ROOT_PASSWORD"
     fi
 
+    # Escape $ characters to prevent Docker Compose from interpreting them as variables
+    BOT_TOKEN_ESCAPED="${BOT_TOKEN//\$/\$\$}"
+    DB_PASSWORD_ESCAPED="${DB_PASSWORD//\$/\$\$}"
+    DB_ROOT_PASSWORD_ESCAPED="${DB_ROOT_PASSWORD//\$/\$\$}"
+
     # Write to .env
     cat > .env <<EOL
 # Bot Configuration
-BOT_TOKEN=$BOT_TOKEN
+BOT_TOKEN=$BOT_TOKEN_ESCAPED
 ADMIN_ID=$ADMIN_ID
 BOT_USERNAME=
 REPORTS_CHANNEL_ID=$REPORTS_CHANNEL_ID
@@ -232,10 +237,10 @@ BOT_WEBAPP_URL=$WEBAPP_URL
 MYSQL_HOST=vpn-db
 MYSQL_PORT=3306
 MYSQL_USER=vpn_bot
-MYSQL_PASSWORD=$DB_PASSWORD
+MYSQL_PASSWORD=$DB_PASSWORD_ESCAPED
 MYSQL_DATABASE=vpn_bot
-DB_PASSWORD=$DB_PASSWORD
-DB_ROOT_PASSWORD=$DB_ROOT_PASSWORD
+DB_PASSWORD=$DB_PASSWORD_ESCAPED
+DB_ROOT_PASSWORD=$DB_ROOT_PASSWORD_ESCAPED
 EOL
 
     print_success "Configuration saved to .env"
