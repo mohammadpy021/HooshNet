@@ -30,8 +30,6 @@ from config import BOT_CONFIG, CLIENT_DEFAULTS, DEFAULT_PANEL_CONFIG, WEBAPP_CON
 from traffic_monitor import TrafficMonitor
 from persian_datetime import PersianDateTime, format_db_datetime, format_db_date
 from user_info_updater import auto_update_user_info, ensure_user_updated
-from user_info_updater import auto_update_user_info, ensure_user_updated
-from channel_checker import require_channel_membership, check_channel_membership, show_force_join_message
 from system_manager import SystemManager
 from reseller_panel.models import ResellerManager
 import psutil
@@ -426,13 +424,6 @@ class VPNBot:
             )
             return
         
-        # Check channel membership (except for admin)
-        if user_id != self.bot_config['admin_id']:
-            is_member = await check_channel_membership(update, context, bot_config=self.bot_config)
-            if not is_member:
-                await show_force_join_message(update, context, bot_config=self.bot_config)
-                return
-        
         # Process user registration with referral code (if new user)
         # For existing users, this will just update activity
         is_new_user = await self.process_user_registration_with_referral(user_id, user, context, referral_code)
@@ -704,100 +695,8 @@ class VPNBot:
             await query.edit_message_text("🚫 شما مسدود شده‌اید و دسترسی به ربات ندارید.")
             return
         
-        # Check channel membership for all callbacks except check_channel_join itself
-        if data != "check_channel_join":
-            is_member = await check_channel_membership(update, context, bot_config=self.bot_config)
-            if not is_member:
-                await show_force_join_message(update, context, bot_config=self.bot_config)
-                return
-        
         try:
-            if data == "check_channel_join":
-                # Re-check membership
-                is_member = await check_channel_membership(update, context, bot_config=self.bot_config)
-                if is_member:
-                    # User is now a member, process registration with stored referral code
-                    user_id = update.effective_user.id
-                    user = update.effective_user
-                    
-                    # Check if user already exists (to avoid duplicate registration)
-                    existing_user = self.db.get_user(user_id)
-                    is_already_registered = existing_user is not None
-                    
-                    # Get stored referral code from user_data
-                    stored_referral_code = None
-                    if context.user_data and 'pending_referral_code' in context.user_data:
-                        stored_referral_code = context.user_data['pending_referral_code']
-                        logger.info(f"📝 Processing stored referral code for user {user_id}: {stored_referral_code}")
-                        # Clear stored referral code after use
-                        del context.user_data['pending_referral_code']
-                    
-                    # Process user registration with referral code (only if not already registered)
-                    if not is_already_registered:
-                        await self.process_user_registration_with_referral(user_id, user, context, stored_referral_code)
-                    else:
-                        logger.info(f"User {user_id} already registered, skipping registration but processing referral if needed")
-                        # If user already exists but has a stored referral code, we still need to check
-                        # But since they're already registered, we can't process new referral
-                        # (Referrals are only processed during initial registration)
-                    
-                    # Show success message and main menu
-                    user_data = self.db.get_user(user_id)
-                    # Check if user is admin - check both database and config
-                    is_admin_by_config = (user_id == self.bot_config['admin_id'])
-                    is_admin_by_db = self.db.is_admin(user_id)
-                    is_admin = is_admin_by_config or is_admin_by_db
-                    # Ensure database name is set in thread-local storage
-                    MessageTemplates.set_database_name(self.db.database_name)
-                    welcome_text = MessageTemplates.format_welcome_message(
-                        user_data or {}, is_admin
-                    )
-                    
-                    # Get webapp URL with bot name prefix
-                    base_url = self.bot_config.get('webapp_url', 'http://localhost:443')
-                    bot_name = self.bot_config.get('bot_name', '')
-                    
-                    reply_markup = ButtonLayout.create_main_menu(
-                        is_admin=is_admin,
-                        user_balance=user_data.get('balance', 0) if user_data else 0,
-                        user_id=user_id,
-                        webapp_url=base_url,
-                        bot_name=bot_name,
-                        db=self.db
-                    )
-                    
-                    webapp_markup = ButtonLayout.create_webapp_keyboard(
-                        webapp_url=base_url,
-                        bot_name=bot_name
-                    )
-                    
-                    # Delete the "Check Join" message
-                    try:
-                        await query.delete_message()
-                    except:
-                        pass
-                    
-                    # Send welcome message with Reply Keyboard
-                    await context.bot.send_message(
-                        chat_id=user_id,
-                        text=f"✅ تبریک! شما با موفقیت عضو کانال شدید.\n\n{welcome_text}",
-                        reply_markup=reply_markup,
-                        parse_mode='Markdown'
-                    )
-                    
-                    # Send Web App button
-                    await context.bot.send_message(
-                        chat_id=user_id,
-                        text="🌐 **ورود به پنل کاربری پیشرفته (وب اپلیکیشن)** 👇",
-                        reply_markup=webapp_markup,
-                        parse_mode='Markdown'
-                    )
-
-                else:
-                    # User is not a member yet
-                    await show_force_join_message(update, context, bot_config=self.bot_config)
-                return
-            elif data == "show_inbounds":
+            if data == "show_inbounds":
                 await self.show_inbounds(update, context)
             elif data == "help":
                 await self.show_help(update, context)

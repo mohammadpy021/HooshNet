@@ -174,6 +174,74 @@ check_ports() {
     return 0
 }
 
+create_config() {
+    print_header "CONFIGURATION SETUP"
+    echo -e "${CYAN}Please enter the following configuration details:${RESET}"
+    echo ""
+
+    # Required Fields
+    while [[ -z "$BOT_TOKEN" ]]; do
+        read -p "Enter Bot Token (Required): " BOT_TOKEN
+    done
+
+    while [[ -z "$ADMIN_ID" ]]; do
+        read -p "Enter Admin ID (Numeric, Required): " ADMIN_ID
+        if ! [[ "$ADMIN_ID" =~ ^[0-9]+$ ]]; then
+            print_error "Admin ID must be a number."
+            ADMIN_ID=""
+        fi
+    done
+
+    read -p "Enter WebApp URL (Default: https://your-domain.com): " WEBAPP_URL
+    WEBAPP_URL=${WEBAPP_URL:-https://your-domain.com}
+
+    # Optional Fields
+    read -p "Enter Reports Group ID (Optional): " REPORTS_CHANNEL_ID
+    REPORTS_CHANNEL_ID=${REPORTS_CHANNEL_ID:-0}
+
+    read -p "Enter Receipts Channel ID (Optional): " RECEIPTS_CHANNEL_ID
+    RECEIPTS_CHANNEL_ID=${RECEIPTS_CHANNEL_ID:-0}
+
+    # Database Passwords
+    read -p "Enter Database Password (Leave empty to auto-generate): " DB_PASSWORD
+    if [[ -z "$DB_PASSWORD" ]]; then
+        DB_PASSWORD=$(openssl rand -base64 16 2>/dev/null || date +%s%N | sha256sum | base64 | head -c 16)
+        print_info "Generated Database Password: $DB_PASSWORD"
+    fi
+
+    read -p "Enter Database Root Password (Leave empty to auto-generate): " DB_ROOT_PASSWORD
+    if [[ -z "$DB_ROOT_PASSWORD" ]]; then
+        DB_ROOT_PASSWORD=$(openssl rand -base64 16 2>/dev/null || date +%s%N | sha256sum | base64 | head -c 16)
+        print_info "Generated Database Root Password: $DB_ROOT_PASSWORD"
+    fi
+
+    # Write to .env
+    cat > .env <<EOL
+# Bot Configuration
+BOT_TOKEN=$BOT_TOKEN
+ADMIN_ID=$ADMIN_ID
+BOT_USERNAME=
+REPORTS_CHANNEL_ID=$REPORTS_CHANNEL_ID
+RECEIPTS_CHANNEL_ID=$RECEIPTS_CHANNEL_ID
+
+# WebApp Configuration
+WEBAPP_URL=$WEBAPP_URL
+BOT_WEBAPP_URL=$WEBAPP_URL
+
+# Database Configuration
+MYSQL_HOST=vpn-db
+MYSQL_PORT=3306
+MYSQL_USER=vpn_bot
+MYSQL_PASSWORD=$DB_PASSWORD
+MYSQL_DATABASE=vpn_bot
+DB_PASSWORD=$DB_PASSWORD
+DB_ROOT_PASSWORD=$DB_ROOT_PASSWORD
+EOL
+
+    print_success "Configuration saved to .env"
+    wait_enter
+}
+
 install_bot() {
     print_header "SYSTEM INSTALLATION"
     
@@ -185,9 +253,13 @@ install_bot() {
     # Check .env
     if [ ! -f .env ]; then
         print_warning "Configuration file (.env) not found."
-        print_step "Creating default configuration..."
-        cp .env.example .env 2>/dev/null || touch .env
-        edit_config
+        create_config
+    else
+        print_info "Configuration file (.env) found."
+        read -p "Do you want to reconfigure? (y/n): " reconfigure
+        if [[ "$reconfigure" == "y" ]]; then
+            create_config
+        fi
     fi
     
     print_step "Building and Starting Containers..."
