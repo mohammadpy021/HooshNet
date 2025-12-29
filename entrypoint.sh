@@ -52,7 +52,22 @@ fi
 # Ensure SSL Directory Exists
 mkdir -p /etc/nginx/ssl
 
-# Generate Self-Signed Certificate if missing
+# Check for Let's Encrypt certificates on host (mounted from /etc/letsencrypt)
+LETSENCRYPT_CERT=""
+if [ -d /etc/letsencrypt/live ]; then
+    # Find the first domain directory
+    for domain_dir in /etc/letsencrypt/live/*/; do
+        if [ -f "${domain_dir}fullchain.pem" ] && [ -f "${domain_dir}privkey.pem" ]; then
+            echo "Found Let's Encrypt certificate in ${domain_dir}"
+            ln -sf "${domain_dir}fullchain.pem" /etc/nginx/ssl/fullchain.pem
+            ln -sf "${domain_dir}privkey.pem" /etc/nginx/ssl/privkey.pem
+            LETSENCRYPT_CERT="yes"
+            break
+        fi
+    done
+fi
+
+# Generate Self-Signed Certificate if no Let's Encrypt cert found
 if [ ! -f /etc/nginx/ssl/fullchain.pem ] || [ ! -f /etc/nginx/ssl/privkey.pem ]; then
     echo "Generating self-signed certificate..."
     openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
@@ -61,12 +76,45 @@ if [ ! -f /etc/nginx/ssl/fullchain.pem ] || [ ! -f /etc/nginx/ssl/privkey.pem ];
         -subj "/C=US/ST=State/L=City/O=Organization/CN=localhost"
 fi
 
-# Force update Nginx config from project file
-if [ -f /app/nginx.conf ]; then
-    echo "Updating Nginx configuration..."
-    cp /app/nginx.conf /etc/nginx/sites-available/vpn_bot
-    ln -sf /etc/nginx/sites-available/vpn_bot /etc/nginx/sites-enabled/
-    rm -f /etc/nginx/sites-enabled/default
+# Write Nginx config directly (FOOLPROOF - no file dependencies)
+echo "Writing Nginx configuration..."
+cat > /etc/nginx/sites-available/vpn_bot << 'NGINX_CONFIG'
+server {
+    listen 80;
+    server_name _;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    server_name _;
+
+    ssl_certificate /etc/nginx/ssl/fullchain.pem;
+    ssl_certificate_key /etc/nginx/ssl/privkey.pem;
+
+    client_max_body_size 10M;
+
+    location / {
+        proxy_pass http://127.0.0.1:5000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+NGINX_CONFIG
+
+# Ensure symlink exists and default is removed
+ln -sf /etc/nginx/sites-available/vpn_bot /etc/nginx/sites-enabled/vpn_bot
+rm -f /etc/nginx/sites-enabled/default
+
+# Test Nginx configuration
+echo "Testing Nginx configuration..."
+if nginx -t; then
+    echo "Nginx configuration is valid!"
+else
+    echo "ERROR: Nginx configuration test failed!"
+    cat /etc/nginx/sites-available/vpn_bot
 fi
 
 # Start Supervisor
