@@ -53,6 +53,36 @@ class DatabaseBackupManager:
             self.bot_name = "Manual Backup"
             self.bot_username = "Unknown"
             self.channel_id = None
+            
+    async def ensure_backup_topic(self) -> int:
+        """
+        Ensure backup topic exists in reports channel
+        Returns topic ID (message_thread_id)
+        """
+        if not self.channel_id or not self.enabled:
+            return 0
+            
+        try:
+            from settings_manager import SettingsManager
+            from telegram_helper import TelegramHelper
+            
+            settings_mgr = SettingsManager(self.db_manager)
+            topic_id = int(settings_mgr.get_setting('backup_topic_id', 0))
+            
+            if topic_id == 0:
+                logger.info(f"Creating new backup topic for channel {self.channel_id}...")
+                topic_id = await TelegramHelper.create_forum_topic(self.channel_id, "💾 Backups")
+                
+                if topic_id > 0:
+                    settings_mgr.set_setting('backup_topic_id', topic_id, description="Backup Topic ID", updated_by=0)
+                    logger.info(f"✅ Backup topic created with ID: {topic_id}")
+                else:
+                    logger.warning("⚠️ Failed to create backup topic, will send to main channel")
+            
+            return topic_id
+        except Exception as e:
+            logger.error(f"❌ Error ensuring backup topic: {e}")
+            return 0
     
     def _find_mysqldump(self) -> Optional[str]:
         """Find mysqldump executable path"""
@@ -299,6 +329,12 @@ class DatabaseBackupManager:
             return
         
         try:
+            # Ensure topic exists
+            topic_id = await self.ensure_backup_topic()
+            kwargs = {}
+            if topic_id > 0:
+                kwargs['message_thread_id'] = topic_id
+            
             timestamp = PersianDateTime.format_full_datetime()
             file_size = os.path.getsize(backup_path)
             file_size_mb = file_size / 1024 / 1024
@@ -327,7 +363,8 @@ class DatabaseBackupManager:
                     document=f,
                     filename=os.path.basename(backup_path),
                     caption=caption,
-                    parse_mode='Markdown'
+                    parse_mode='Markdown',
+                    message_thread_id=kwargs.get('message_thread_id')
                 )
             
             logger.info(f"✅ Backup sent successfully to channel {self.channel_id}")
@@ -355,7 +392,8 @@ class DatabaseBackupManager:
                 await self.bot.send_message(
                     chat_id=self.channel_id,
                     text=error_msg,
-                    parse_mode='Markdown'
+                    parse_mode='Markdown',
+                    message_thread_id=kwargs.get('message_thread_id')
                 )
             except:
                 pass
@@ -384,7 +422,8 @@ class DatabaseBackupManager:
                 await self.bot.send_message(
                     chat_id=self.channel_id,
                     text=error_msg,
-                    parse_mode='Markdown'
+                    parse_mode='Markdown',
+                    message_thread_id=await self.ensure_backup_topic() or None
                 )
             except:
                 pass
@@ -399,6 +438,9 @@ class DatabaseBackupManager:
         from settings_manager import SettingsManager
         # Initialize SettingsManager with the existing db_manager
         settings_mgr = SettingsManager(self.db_manager)
+        
+        # Ensure backup topic exists at startup
+        await self.ensure_backup_topic()
         
         while True:
             try:

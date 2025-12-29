@@ -50,6 +50,16 @@ class ProfessionalDatabaseManager:
         # Initialize database schema
         self.init_database()
         
+        # Seed default texts
+        try:
+            from text_manager import TextManager
+            text_manager = TextManager(self)
+            count = text_manager.initialize_default_texts()
+            if count > 0:
+                logger.info(f"✅ Seeded {count} default bot texts")
+        except Exception as e:
+            logger.error(f"❌ Error seeding default texts: {e}")
+        
         # Verify connection pool is using correct database
         pool = ProfessionalDatabaseManager._connection_pools.get(self.database_name)
         if pool:

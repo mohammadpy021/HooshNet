@@ -8844,7 +8844,56 @@ def admin_settings_backup():
         settings.set_setting('auto_backup_enabled', enabled, description="Auto Backup Enabled", updated_by=session.get('user_id'))
         settings.set_setting('auto_backup_interval', int(frequency), description="Auto Backup Interval (Hours)", updated_by=session.get('user_id'))
         
-        return jsonify({'success': True, 'message': 'تنظیمات بکاپ ذخیره شد'})
+        # Trigger immediate backup if enabled (or re-enabled)
+        if enabled:
+            try:
+                # Reset last backup time to NOW so the scheduler picks it up based on new interval
+                # BUT user requested immediate backup, so we do it now and set last time to now
+                from database_backup_system import DatabaseBackupManager
+                from telegram_helper import TelegramHelper
+                
+                # Get bot instance for backup manager
+                bot = TelegramHelper.get_bot()
+                
+                # Initialize backup manager
+                # We need to construct a minimal bot_config for the backup manager
+                # Since we are in webapp, we might not have full bot_config, but we have what's needed
+                from config import BOT_CONFIG
+                
+                backup_manager = DatabaseBackupManager(get_db(), bot, BOT_CONFIG)
+                
+                # Run backup in background to not block response
+                import asyncio
+                
+                async def run_immediate_backup():
+                    try:
+                        # Ensure topic exists
+                        await backup_manager.ensure_backup_topic()
+                        # Create and send backup
+                        if await backup_manager.create_and_send_backup():
+                            # Update last backup time
+                            settings.set_setting('last_auto_backup_time', datetime.now().isoformat(), description="Last Auto Backup Time", updated_by=0)
+                            logger.info("✅ Immediate backup completed successfully")
+                    except Exception as e:
+                        logger.error(f"❌ Error in immediate backup: {e}")
+
+                # Fire and forget (or run in event loop if possible)
+                # Since we are in Flask (sync), we need to run async code carefully
+                # Best way is to use a thread for the async loop
+                def run_async_backup():
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    loop.run_until_complete(run_immediate_backup())
+                    loop.close()
+                
+                threading.Thread(target=run_async_backup).start()
+                
+                logger.info("🚀 Triggered immediate backup due to settings change")
+                
+            except Exception as e:
+                logger.error(f"❌ Error triggering immediate backup: {e}")
+        
+        return jsonify({'success': True, 'message': 'تنظیمات بکاپ ذخیره شد و بکاپ جدید در حال ارسال است'})
     except Exception as e:
         logger.error(f"Error saving backup settings: {e}")
         return jsonify({'success': False, 'message': 'خطا در ذخیره تنظیمات'}), 500
