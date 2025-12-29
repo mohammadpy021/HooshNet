@@ -77,15 +77,26 @@ mkdir -p /etc/nginx/ssl
 # Check for Let's Encrypt certificates on host (mounted from /etc/letsencrypt)
 LETSENCRYPT_CERT=""
 if [ -d /etc/letsencrypt/live ]; then
-    for domain_dir in /etc/letsencrypt/live/*/; do
-        if [ -f "${domain_dir}fullchain.pem" ] && [ -f "${domain_dir}privkey.pem" ]; then
-            log_success "Found Let's Encrypt certificate in ${domain_dir}"
-            ln -sf "${domain_dir}fullchain.pem" /etc/nginx/ssl/fullchain.pem
-            ln -sf "${domain_dir}privkey.pem" /etc/nginx/ssl/privkey.pem
-            LETSENCRYPT_CERT="yes"
-            break
-        fi
-    done
+    # Try to find cert for configured domain first
+    DOMAIN_FROM_URL=$(echo "${BOT_WEBAPP_URL:-$WEBAPP_URL}" | sed -e 's|^[^/]*//||' -e 's|/.*$||' -e 's|:.*$||')
+    
+    if [ -n "$DOMAIN_FROM_URL" ] && [ -f "/etc/letsencrypt/live/$DOMAIN_FROM_URL/fullchain.pem" ]; then
+        log_success "Found Let's Encrypt certificate for configured domain: $DOMAIN_FROM_URL"
+        ln -sf "/etc/letsencrypt/live/$DOMAIN_FROM_URL/fullchain.pem" /etc/nginx/ssl/fullchain.pem
+        ln -sf "/etc/letsencrypt/live/$DOMAIN_FROM_URL/privkey.pem" /etc/nginx/ssl/privkey.pem
+        LETSENCRYPT_CERT="yes"
+    else
+        # Fallback: Find the first valid domain directory
+        for domain_dir in /etc/letsencrypt/live/*/; do
+            if [ -f "${domain_dir}fullchain.pem" ] && [ -f "${domain_dir}privkey.pem" ]; then
+                log_success "Found Let's Encrypt certificate in ${domain_dir}"
+                ln -sf "${domain_dir}fullchain.pem" /etc/nginx/ssl/fullchain.pem
+                ln -sf "${domain_dir}privkey.pem" /etc/nginx/ssl/privkey.pem
+                LETSENCRYPT_CERT="yes"
+                break
+            fi
+        done
+    fi
 fi
 
 # Generate Self-Signed Certificate if no Let's Encrypt cert found

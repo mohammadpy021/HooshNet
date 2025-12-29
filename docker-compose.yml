@@ -8,13 +8,12 @@ services:
     ports:
       - "80:80"
       - "443:443"
-      - "5000:5000"
     volumes:
       - .:/app
       - ./backups:/app/backups
       - ./database_backups:/app/database_backups
       - ./logs:/app/logs
-      - /etc/letsencrypt:/etc/letsencrypt:ro
+      - /etc/letsencrypt:/etc/letsencrypt
     environment:
       - MYSQL_HOST=vpn-db
       - MYSQL_PORT=3306
