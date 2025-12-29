@@ -5586,6 +5586,76 @@ def api_check_transaction_status(invoice_id):
         logger.error(traceback.format_exc())
         return secure_error_response(e)
 
+@app.route('/admin/settings/backup', methods=['GET', 'POST'])
+@admin_required
+def api_admin_settings_backup():
+    """API endpoint to update backup settings"""
+    try:
+        db_instance = get_db()
+        from settings_manager import SettingsManager
+        settings_mgr = SettingsManager(db_instance)
+
+        if request.method == 'GET':
+            enabled = settings_mgr.get_setting('auto_backup_enabled', False)
+            frequency = settings_mgr.get_setting('auto_backup_frequency', 24)
+            return jsonify({
+                'success': True,
+                'enabled': enabled,
+                'frequency': frequency
+            })
+
+        # POST request
+        data = request.get_json()
+        enabled = data.get('enabled', False)
+        frequency = data.get('frequency', 24)
+        
+        # Update settings
+        settings_mgr.set_setting('auto_backup_enabled', enabled, description="Auto Backup Enabled", updated_by=session.get('user_id'))
+        settings_mgr.set_setting('auto_backup_frequency', frequency, description="Auto Backup Frequency (Hours)", updated_by=session.get('user_id'))
+        
+        # Trigger immediate backup if enabled
+        if enabled:
+            def trigger_backup():
+                try:
+                    from database_backup_system import DatabaseBackupManager
+                    from telegram_helper import TelegramHelper
+                    import asyncio
+                    
+                    # Create new DB instance for thread
+                    from professional_database import ProfessionalDatabaseManager
+                    from config import DB_CONFIG
+                    thread_db = ProfessionalDatabaseManager(DB_CONFIG)
+                    
+                    # Initialize backup manager
+                    bot = TelegramHelper.get_bot()
+                    backup_mgr = DatabaseBackupManager(thread_db, bot, BOT_CONFIG)
+                    
+                    # Run async backup in new event loop
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    loop.run_until_complete(backup_mgr.create_and_send_backup())
+                    loop.close()
+                    
+                    # Update last backup time
+                    # We need to re-instantiate settings manager with thread_db
+                    thread_settings_mgr = SettingsManager(thread_db)
+                    thread_settings_mgr.set_setting('last_auto_backup_time', datetime.now().isoformat(), description="Last Auto Backup Time", updated_by=0)
+                    logger.info("✅ Immediate backup triggered successfully")
+                except Exception as e:
+                    logger.error(f"❌ Error in immediate backup trigger: {e}")
+                    import traceback
+                    logger.error(traceback.format_exc())
+
+            # Run in background thread
+            threading.Thread(target=trigger_backup).start()
+            
+        return jsonify({'success': True, 'message': 'تنظیمات بکاپ با موفقیت ذخیره شد'})
+        
+    except Exception as e:
+        logger.error(f"Error updating backup settings: {e}")
+        return secure_error_response(e)
+
+
 @app.route('/admin/settings')
 @admin_required
 def admin_settings():
