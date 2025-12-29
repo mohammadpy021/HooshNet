@@ -6327,7 +6327,8 @@ def api_admin_add_panel():
             subscription_url=data.get('subscription_url'),
             sale_type=data.get('sale_type', 'gigabyte'),
             default_inbound_id=default_inbound_id,
-            extra_config=data.get('extra_config')
+            extra_config=data.get('extra_config'),
+            delivery_method=data.get('delivery_method', 'subscription_link')
         )
         
         if success:
@@ -6472,7 +6473,8 @@ def api_admin_update_panel(panel_id):
             panel_type=data.get('panel_type'),
             sale_type=data.get('sale_type'),
             default_inbound_id=data.get('default_inbound_id'),
-            extra_config=data.get('extra_config')
+            extra_config=data.get('extra_config'),
+            delivery_method=data.get('delivery_method')
         )
         
         if success:

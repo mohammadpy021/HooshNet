@@ -238,11 +238,21 @@ class ProfessionalDatabaseManager:
                         subscription_url TEXT,
                         default_protocol VARCHAR(50) DEFAULT 'vless',
                         sale_type VARCHAR(50) DEFAULT 'gigabyte',
+                        delivery_method VARCHAR(50) DEFAULT 'subscription_link',
                         extra_config JSON,
                         notes TEXT
                     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
                 ''')
 
+                # Add delivery_method column if it doesn't exist (migration)
+                try:
+                    cursor.execute("SHOW COLUMNS FROM panels LIKE 'delivery_method'")
+                    if not cursor.fetchone():
+                        cursor.execute("ALTER TABLE panels ADD COLUMN delivery_method VARCHAR(50) DEFAULT 'subscription_link'")
+                        logger.info("✅ Added delivery_method column to panels table")
+                except Exception as e:
+                    logger.warning(f"⚠️ Error checking/adding delivery_method column: {e}")
+                
                 # Create panel_inbounds table
                 cursor.execute('''
                     CREATE TABLE IF NOT EXISTS panel_inbounds (
@@ -1723,7 +1733,7 @@ class ProfessionalDatabaseManager:
     def add_panel(self, name: str, url: str, username: str, password: str, 
                   api_endpoint: str, default_inbound_id: int = None, price_per_gb: int = 0,
                   subscription_url: str = None, panel_type: str = '3x-ui', default_protocol: str = 'vless',
-                  sale_type: str = 'gigabyte', extra_config: dict = None) -> int:
+                  sale_type: str = 'gigabyte', extra_config: dict = None, delivery_method: str = 'subscription_link') -> int:
         """Add a new panel"""
         try:
             with self.get_connection() as conn:
@@ -1733,9 +1743,9 @@ class ProfessionalDatabaseManager:
                 extra_config_json = json.dumps(extra_config) if extra_config else None
                 
                 cursor.execute('''
-                    INSERT INTO panels (name, panel_type, url, username, password, api_endpoint, default_inbound_id, price_per_gb, subscription_url, default_protocol, sale_type, extra_config)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                ''', (name, panel_type, url, username, password, api_endpoint, default_inbound_id, price_per_gb, subscription_url, default_protocol, sale_type, extra_config_json))
+                    INSERT INTO panels (name, panel_type, url, username, password, api_endpoint, default_inbound_id, price_per_gb, subscription_url, default_protocol, sale_type, extra_config, delivery_method)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ''', (name, panel_type, url, username, password, api_endpoint, default_inbound_id, price_per_gb, subscription_url, default_protocol, sale_type, extra_config_json, delivery_method))
                 
                 panel_id = cursor.lastrowid
                 conn.commit()
@@ -1781,7 +1791,8 @@ class ProfessionalDatabaseManager:
                      username: str = None, password: str = None, 
                      api_endpoint: str = None, price_per_gb: int = None,
                      subscription_url: str = None, panel_type: str = None, default_protocol: str = None,
-                     sale_type: str = None, default_inbound_id: int = None, extra_config: dict = None) -> bool:
+                     sale_type: str = None, default_inbound_id: int = None, extra_config: dict = None,
+                     delivery_method: str = None) -> bool:
         """Update panel information"""
         try:
             with self.get_connection() as conn:
@@ -1827,6 +1838,9 @@ class ProfessionalDatabaseManager:
                 if default_inbound_id is not None:
                     updates.append("default_inbound_id = %s")
                     params.append(default_inbound_id)
+                if delivery_method is not None:
+                    updates.append("delivery_method = %s")
+                    params.append(delivery_method)
                 
                 if not updates:
                     return True  # Nothing to update
