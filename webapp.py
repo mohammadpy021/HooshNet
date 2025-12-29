@@ -270,8 +270,11 @@ except Exception as e:
 def security_check():
     """Comprehensive security check before every request"""
     # DEBUG: Log headers to diagnose login loop
-    if request.endpoint in ['index', 'telegram_auth', 'dashboard']:
+    if request.endpoint in ['index', 'telegram_auth', 'dashboard', 'health_check']:
         logger.info(f"DEBUG HEADERS for {request.endpoint}:")
+        logger.info(f"  Scheme: {request.scheme}")
+        logger.info(f"  Host: {request.host}")
+        logger.info(f"  Headers: {dict(request.headers)}")
         for header, value in request.headers.items():
             logger.info(f"  {header}: {value}")
             

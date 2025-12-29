@@ -489,6 +489,26 @@ run_speedtest() {
         apt-get update && apt-get install -y speedtest-cli
     fi
     speedtest-cli
+    speedtest-cli
+    wait_enter
+}
+
+debug_system() {
+    print_header "SYSTEM DEBUG"
+    print_step "Running diagnostics..."
+    
+    if ! docker compose ps | grep -q "vpn-bot"; then
+        print_error "Container vpn-bot is not running!"
+        wait_enter
+        return
+    fi
+    
+    docker compose exec vpn-bot python3 debug_webapp.py
+    
+    echo ""
+    print_step "Checking recent logs..."
+    docker compose logs --tail=20 vpn-bot
+    
     wait_enter
 }
 
@@ -537,6 +557,7 @@ while true; do
     echo -e " ${GREEN}16.${RESET} ${ICON_ROCKET} Enable BBR"
     echo -e " ${GREEN}17.${RESET} ${ICON_ROCKET} Speedtest"
     echo -e " ${GREEN}18.${RESET} ${ICON_INSTALL} Install 'hooshnet' Command"
+    echo -e " ${GREEN}19.${RESET} ${ICON_LOG} Debug System"
     echo ""
     echo -e " ${RED}0.${RESET} ${ICON_EXIT} Exit"
     echo ""
@@ -562,6 +583,7 @@ while true; do
         16) enable_bbr ;;
         17) run_speedtest ;;
         18) install_shortcut ;;
+        19) debug_system ;;
         0) clear; exit 0 ;;
         *) print_error "Invalid choice!"; sleep 1 ;;
     esac

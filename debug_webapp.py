@@ -137,6 +137,50 @@ def test_webapp_import():
         traceback.print_exc()
         return False
 
+def test_processes():
+    """Test if required processes are running"""
+    print("\n" + "=" * 60)
+    print("Testing running processes...")
+    print("=" * 60)
+    
+    required_procs = ['nginx', 'gunicorn', 'supervisord']
+    found_procs = {p: False for p in required_procs}
+    
+    try:
+        import psutil
+        for proc in psutil.process_iter(['name', 'cmdline']):
+            try:
+                name = proc.info['name']
+                cmdline = proc.info['cmdline'] or []
+                cmdline_str = ' '.join(cmdline)
+                
+                if 'nginx' in name:
+                    found_procs['nginx'] = True
+                if 'gunicorn' in name or 'gunicorn' in cmdline_str:
+                    found_procs['gunicorn'] = True
+                if 'supervisord' in name or 'supervisord' in cmdline_str:
+                    found_procs['supervisord'] = True
+            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                pass
+                
+        for proc, found in found_procs.items():
+            if found:
+                print(f"  ✓ {proc} is running")
+            else:
+                print(f"  ✗ {proc} is NOT running")
+                
+        if all(found_procs.values()):
+            return True
+        else:
+            return False
+            
+    except ImportError:
+        print("  ⚠ psutil not installed, skipping process check")
+        return True
+    except Exception as e:
+        print(f"  ✗ Error checking processes: {e}")
+        return False
+
 def main():
     print("\n")
     print("=" * 60)
@@ -148,6 +192,7 @@ def main():
         "env_vars": test_env_vars(),
         "database": test_database_connection(),
         "webapp": test_webapp_import(),
+        "processes": test_processes(),
     }
     
     print("\n" + "=" * 60)
