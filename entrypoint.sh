@@ -43,6 +43,12 @@ echo "Running Database Migrations..."
 # Force Rebuild 2024-12-29
 python3 -c "from professional_database import ProfessionalDatabaseManager; db = ProfessionalDatabaseManager(); db.init_database()"
 
+# Fallback: Install dependencies if missing (in case image wasn't rebuilt)
+if ! command -v openssl &> /dev/null; then
+    echo "Installing missing dependencies..."
+    apt-get update && apt-get install -y openssl certbot
+fi
+
 # Ensure SSL Directory Exists
 mkdir -p /etc/nginx/ssl
 

@@ -14,6 +14,7 @@ services:
       - ./logs:/app/logs
       - /etc/letsencrypt:/etc/letsencrypt
       - ./entrypoint.sh:/entrypoint.sh
+      - ./nginx.conf:/etc/nginx/sites-available/vpn_bot
     environment:
       - MYSQL_HOST=vpn-db
       - MYSQL_PORT=3306
