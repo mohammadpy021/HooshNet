@@ -496,6 +496,12 @@ run_speedtest() {
 if [[ "$1" == "install" ]]; then
     install_bot
     exit 0
+elif [[ "$1" == "update" ]]; then
+    update_bot
+    exit 0
+elif [[ "$1" == "restart" ]]; then
+    restart_services
+    exit 0
 fi
 
 # Main Menu Loop
