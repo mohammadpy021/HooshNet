@@ -840,7 +840,19 @@ class ProfessionalDatabaseManager:
                         INDEX idx_created_at (created_at)
                     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
                 ''')
-
+                
+                # NEW: Create  system_settings table
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS system_settings (
+                        id INT AUTO_INCREMENT PRIMARY KEY,
+                        setting_key VARCHAR(255) UNIQUE NOT NULL,
+                        setting_value TEXT,
+                        description TEXT,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                        INDEX idx_setting_key (setting_key)
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+                ''')
+                
                 # Run migrations
                 self._run_migrations(conn)
                 
