@@ -87,10 +87,7 @@ MYSQL_CONFIG = {
     'charset': 'utf8mb4',
     'collation': 'utf8mb4_unicode_ci',
     'autocommit': True,
-    'pool_size': 5,  # Reduced to prevent "too many connections" error
-
-    'pool_timeout': 30,    # Maximum seconds to wait for a free connection from the pool before raising a TimeoutError
-    
+    'pool_size': 5,  # Reduced to prevent "too many connections" error   
     'pool_reset_session': True,
     'buffered': True
 }
