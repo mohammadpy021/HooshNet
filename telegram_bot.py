@@ -16524,6 +16524,7 @@ class VPNBot:
         """Handle input for card settings"""
         user_id = update.effective_user.id
         
+        
         if context.user_data.get('awaiting_card_number'):
             # Validate card number (simple check)
             if not text.isdigit() or len(text) != 16:
@@ -16540,11 +16541,11 @@ class VPNBot:
             )
             
             context.user_data['awaiting_card_number'] = False
-            await update.message.reply_text("✅ شماره کارت با موفقیت ذخیره شد.")
             
-            # Show settings again
-            # We can't easily edit the previous message here, so we send a new one or just let them navigate back
-            # Ideally we would show the menu again
+            # NEW: Create a return button
+            keyboard = [[InlineKeyboardButton("🔙 بازگشت به پنل مدیریت", callback_data="admin_panel")]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await update.message.reply_text("✅ شماره کارت با موفقیت ذخیره شد.", reply_markup=reply_markup)
             
         elif context.user_data.get('awaiting_card_owner'):
             # Save card owner
@@ -16557,8 +16558,14 @@ class VPNBot:
             )
             
             context.user_data['awaiting_card_owner'] = False
-            await update.message.reply_text("✅ نام صاحب کارت با موفقیت ذخیره شد.")
-
+            
+            #  NEW: Create a return button
+            keyboard = [[InlineKeyboardButton("🔙 بازگشت به پنل مدیریت", callback_data="admin_panel")]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            # NEW: Send confirmation with the return button
+            await update.message.reply_text("✅ نام صاحب کارت با موفقیت ذخیره شد.", reply_markup=reply_markup)
+            
     async def show_card_payment(self, update: Update, context: ContextTypes.DEFAULT_TYPE, invoice_id: int):
         """Show card payment details and ask for receipt"""
         query = update.callback_query
