@@ -590,7 +590,6 @@
         const formData = new FormData(form);
         const data = Object.fromEntries(formData.entries());
 
-        // Handle Pasargad extra config
         if (data.panel_type === 'pasargad') {
             const group = document.getElementById('add_pasargad_group').value;
             if (group) {
@@ -598,11 +597,12 @@
             }
         }
 
-        // Convert checkbox to boolean if needed, though FormData usually handles it
-        // Add logic to call API
+        // NEW: Select the button and save its original text OUTSIDE the try block
+        const btn = form.querySelector('button[type="submit"]');
+        const originalText = btn.innerHTML;
+
         try {
-            const btn = form.querySelector('button[type="submit"]');
-            const originalText = btn.innerHTML;
+            // Change button state to loading
             btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
             btn.disabled = true;
 
@@ -615,9 +615,11 @@
             closeModal('addPanelModal');
             setTimeout(() => window.location.reload(), 1000);
         } catch (error) {
-            // Error handled by apiCall
+            // Error is handled by apiCall
         } finally {
-            // Reset button
+            // UPDATE: Reset the button to its original state whether it fails or succeeds
+            btn.innerHTML = originalText;
+            btn.disabled = false;
         }
     }
 
