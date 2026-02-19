@@ -86,7 +86,7 @@ MYSQL_CONFIG = {
     'database': os.getenv('MYSQL_DATABASE', 'vpn_bot'),
     'charset': 'utf8mb4',
     'collation': 'utf8mb4_unicode_ci',
-    'autocommit': False,
+    'autocommit': True,
     'pool_size': 5,  # Reduced to prevent "too many connections" error
     
     'pool_recycle': 3600,  # Refresh idle connections every hour to prevent "MySQL has gone away" errors
