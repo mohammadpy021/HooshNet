@@ -39,6 +39,8 @@ from database_restore_system import DatabaseRestoreManager
 from username_formatter import username_generator, NamingMethod, UsernameFormatter
 from lottery_system import lottery_system
 
+from channel_checker import check_channel_membership, show_force_join_message
+
 # Configure logging
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
