@@ -1,3 +1,12 @@
+# Custom
+database_backups/
+backups/
+logs/
+*.sql
+*.gz
+*.bak
+.env.bak
+
 # Python
 __pycache__/
 *.py[cod]
@@ -47,6 +56,8 @@ bot.log
 *.sqlite
 *.sqlite3
 database_backups/*.db
+
+
 
 # OS
 .DS_Store
